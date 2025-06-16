@@ -176,3 +176,92 @@ class MeView(APIView):
     def get(self, request):
         serializer = UserDetailSerializer(request.user)
         return Response(serializer.data)
+    
+
+
+
+
+
+class PendingCommandesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        waiting = Commande.objects.filter(status='waiting')
+        loading = Commande.objects.filter(status='loading')
+        return Response({
+            "waiting": CommandeSerializer(waiting, many=True).data,
+            "loading": CommandeSerializer(loading, many=True).data
+        })
+    
+
+
+
+
+class GetUserByPhoneView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, phone):
+        try:
+            user = User.objects.get(phone=phone)
+            if user.type in ['simple', 'traitor']:
+                return Response(UserDetailSerializer(user).data)
+            else:
+                return Response({"detail": "Not a simple or traitor user"}, status=status.HTTP_403_FORBIDDEN)
+        except User.DoesNotExist:
+            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+
+
+
+
+class StatisticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        data = {
+            "simple_users": User.objects.filter(type='simple').count(),
+            "traitors": User.objects.filter(type='traitor').count(),
+            "commandes_delivered": Commande.objects.filter(status='delivered').count(),
+            "commandes_waiting": Commande.objects.filter(status='waiting').count(),
+            "commandes_loading": Commande.objects.filter(status='loading').count(),
+        }
+        return Response(data)
+    
+
+
+
+
+class ChangeCommandeStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        new_status = request.data.get('status')
+        if new_status not in ['waiting', 'paid', 'loading', 'delivered']:
+            return Response({'detail': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
+
+        commande = get_object_or_404(Commande, pk=pk)
+        commande.status = new_status
+        commande.save()
+        return Response({'detail': 'Status updated successfully', 'commande': CommandeSerializer(commande).data})
+    
+
+
+
+
+
+
+class ToggleUserTypeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        user = get_object_or_404(User, pk=pk)
+
+        if user.type == 'simple':
+            user.type = 'traitor'
+        elif user.type == 'traitor':
+            user.type = 'simple'
+        else:
+            return Response({"detail": "Only 'simple' or 'traitor' users can be toggled."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.save()
+        return Response({"detail": "User type updated successfully", "new_type": user.type})

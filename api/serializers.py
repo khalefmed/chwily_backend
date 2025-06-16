@@ -36,7 +36,7 @@ class CategorySerializer(serializers.ModelSerializer):
 class CategoryDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ['id', 'name', 'price1', 'price2', 'price3', 'livraison', 'type', 'type_class']
+        fields = ['id', 'name_fr', 'image', 'name_ar', 'price1', 'price2', 'price3', 'livraison', 'type', 'type_class']
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
@@ -54,7 +54,7 @@ class ItemCommandeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ItemCommande
         fields = [
-            'id', 'commande', 'category', 'category_id',
+            'id', 'commande', 'category', 'category_id', 'selected_price',
             'number', 'with_chicken', 'chicken_number', 'remplissage'
         ]
 
@@ -69,6 +69,6 @@ class CommandeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Commande
         fields = [
-            'id', 'prix', 'date', 'status', 'location',
+            'id', 'title', 'code',  'prix', 'date', 'status', 'location', 'livraison',
             'phone', 'user', 'user_id', 'items'
         ]

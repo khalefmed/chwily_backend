@@ -91,10 +91,13 @@ class Commande(models.Model):
         ('delivered', 'Delivered'),
     ]
     prix = models.FloatField()
+    livraison = models.FloatField(default=0)
+    title = models.CharField(max_length=100, default='')  
+    code = models.CharField(max_length=100, default='')
     date = models.DateField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
     location = models.TextField()
-    phone = PhoneNumberField()
+    phone = models.CharField(max_length=100, default='')  # Removed comma
     user = models.ForeignKey(User, on_delete=models.CASCADE)
 
     def __str__(self):
@@ -108,6 +111,7 @@ class ItemCommande(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     commande = models.ForeignKey(Commande, on_delete=models.CASCADE, related_name='items')
     number = models.PositiveIntegerField()
+    selected_price = models.FloatField(default=0)
     with_chicken = models.BooleanField(default=False, null=True, blank=True)
     chicken_number = models.PositiveIntegerField(default=0, null=True, blank=True)
     remplissage = models.CharField(max_length=100, default="", null=True, blank=True)
