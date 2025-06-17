@@ -10,6 +10,9 @@ router.register('items', ItemCommandeViewSet)
 
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
+    path('signup/', SignupView.as_view(), name='signup'),
+    path('check-phone/', check_phone_exists, name='check-phone'),
+
 
     # Custom category views
     path('category/guewda/', GuewdaCategoryView.as_view(), name='category-guewda'),

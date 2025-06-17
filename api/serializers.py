@@ -7,9 +7,9 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    class Meta:
+    class Meta: 
         model = User
-        fields = ['id', 'username', 'phone', 'type', 'password']
+        fields = ['id', 'username', 'phone', 'first_name', 'last_name', 'type', 'password']
         extra_kwargs = {
             'password': {'write_only': True}
         }
@@ -58,17 +58,17 @@ class ItemCommandeSerializer(serializers.ModelSerializer):
             'number', 'with_chicken', 'chicken_number', 'remplissage'
         ]
 
-
 class CommandeSerializer(serializers.ModelSerializer):
     user = UserDetailSerializer(read_only=True)
-    user_id = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), write_only=True, source='user'
-    )
     items = ItemCommandeSerializer(many=True, read_only=True)
 
     class Meta:
         model = Commande
         fields = [
-            'id', 'title', 'code',  'prix', 'date', 'status', 'location', 'livraison',
-            'phone', 'user', 'user_id', 'items'
+            'id', 'title', 'code', 'prix', 'date', 'status', 'location', 'livraison', 'capture',
+            'phone', 'user', 'items'
         ]
+
+    def create(self, validated_data):
+        user = self.context['user']  # get user from context
+        return Commande.objects.create(user=user, **validated_data)

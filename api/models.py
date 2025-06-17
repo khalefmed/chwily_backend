@@ -3,6 +3,7 @@ from phonenumber_field.modelfields import PhoneNumberField
 from django.contrib.auth.models import AbstractUser, BaseUserManager, PermissionsMixin
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.hashers import make_password
+import uuid
 
 
 
@@ -90,19 +91,27 @@ class Commande(models.Model):
         ('loading', 'Loading'),
         ('delivered', 'Delivered'),
     ]
+
     prix = models.FloatField()
     livraison = models.FloatField(default=0)
     title = models.CharField(max_length=100, default='')  
-    code = models.CharField(max_length=100, default='')
+    code = models.CharField(max_length=100, default='', unique=True, editable=False)
     date = models.DateField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
     location = models.TextField()
-    phone = models.CharField(max_length=100, default='')  # Removed comma
+    phone = models.CharField(max_length=100, default='') 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    capture = models.ImageField(upload_to='captures_commandes/', default='')
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            # Generate a short unique identifier (8 characters from UUID)
+            unique_code = uuid.uuid4().hex[:8].upper()
+            self.code = f"CM{unique_code}"
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Commande {self.id} - {self.status}"
-
+        return f"Commande {self.id} - {self.status} - {self.title}"
 
 
 

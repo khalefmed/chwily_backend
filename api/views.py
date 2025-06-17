@@ -8,6 +8,10 @@ from django.contrib.auth import authenticate
 from .models import User, Category, Commande, ItemCommande
 from .serializers import *
 from django.shortcuts import get_object_or_404
+from rest_framework.permissions import AllowAny
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.parsers import MultiPartParser, FormParser
+import json
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -99,23 +103,38 @@ class MesCommandesView(APIView):
         return Response(serializer.data)
 
 
-# --- Ajouter une commande ---
 class AddCommandeView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
         items_data = request.data.get('items')
-        if not items_data or not isinstance(items_data, list):
+        if not items_data:
             return Response({'detail': 'A list of items is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            items_data = json.loads(items_data)
+        except Exception:
+            return Response({'detail': 'Items must be a valid JSON list.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not isinstance(items_data, list):
+            return Response({'detail': 'A list of items is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Prepare data dict for serializer, including the image file if present
         commande_data = {
             'prix': request.data.get('prix'),
             'location': request.data.get('location'),
             'phone': request.data.get('phone'),
-            'user': request.user.id
+            'user': request.user.id,
+            'title': request.data.get('title'),
+            
         }
 
-        commande_serializer = CommandeSerializer(data=commande_data)
+        # Check if an image was uploaded and add it to the data
+        if 'capture' in request.FILES:
+            commande_data['capture'] = request.FILES['capture']
+
+        commande_serializer = CommandeSerializer(data=commande_data, context={'user': request.user})
         if not commande_serializer.is_valid():
             return Response({
                 'detail': 'Invalid commande data.',
@@ -139,8 +158,6 @@ class AddCommandeView(APIView):
         return Response(CommandeSerializer(commande).data, status=status.HTTP_201_CREATED)
 
 
-
-# --- Update password ---
 class UpdatePasswordView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -265,3 +282,35 @@ class ToggleUserTypeView(APIView):
 
         user.save()
         return Response({"detail": "User type updated successfully", "new_type": user.type})
+
+
+
+
+
+class SignupView(APIView):
+
+    permission_classes = [AllowAny] 
+
+    def post(self, request):
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({
+                "message": "User created successfully",
+                "user": UserDetailSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def check_phone_exists(request):
+    phone = request.data.get('phone')
+
+    if phone is None:
+        return Response({"error": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    exists = User.objects.filter(phone=phone).exists()
+    return Response({"exists": exists})
+
