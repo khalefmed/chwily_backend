@@ -66,7 +66,7 @@ class LoginView(TokenObtainPairView):
 # --- Category details by type ---
 class GuewdaCategoryView(APIView):
     def get(self, request):
-        categories = Category.objects.filter(type='guewda')
+        categories = Category.objects.filter(type='guewda').order_by('id')
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 
@@ -81,16 +81,32 @@ class GuewdaCategoryView(APIView):
 
 class SayraCategoryView(APIView):
     def get(self, request):
-        categories = Category.objects.filter(type='sayra')
+        categories = Category.objects.filter(type='sayra').order_by('id')
         serializer = CategorySerializer(categories, many=True)
-        return Response(serializer.data)
+        data = serializer.data
+
+        if hasattr(request.user, 'type') and request.user.type == 'traitor':
+            for item in data:
+                item['price1'] = round(item['price1'] * 0.8, 2)
+                item['price2'] = round(item['price2'] * 0.8, 2)
+                item['price3'] = round(item['price3'] * 0.8, 2)
+
+        return Response(data)
 
 
 class MechwiCategoryView(APIView):
     def get(self, request):
-        categories = Category.objects.filter(type='mechwi')
+        categories = Category.objects.filter(type='mechwi').order_by('id')
         serializer = CategorySerializer(categories, many=True)
-        return Response(serializer.data)
+        data = serializer.data
+
+        if hasattr(request.user, 'type') and request.user.type == 'traitor':
+            for item in data:
+                item['price1'] = round(item['price1'] * 0.8, 2)
+                item['price2'] = round(item['price2'] * 0.8, 2)
+                item['price3'] = round(item['price3'] * 0.8, 2)
+
+        return Response(data)
 
 
 # --- Mes Commandes ---
