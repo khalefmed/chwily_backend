@@ -4,6 +4,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager, Permission
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.hashers import make_password
 import uuid
+from cloudinary.models import CloudinaryField
 
 
 
@@ -67,7 +68,7 @@ class User(AbstractUser):
 
 
 class Category(models.Model):
-    image = models.ImageField(upload_to='category_images/')
+    image = CloudinaryField('image')
     name_fr = models.CharField(max_length=100)
     name_ar = models.CharField(max_length=100, default='')
     price1 = models.FloatField()
@@ -101,7 +102,7 @@ class Commande(models.Model):
     location = models.TextField()
     phone = models.CharField(max_length=100, default='') 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    capture = models.ImageField(upload_to='captures_commandes/', default='')
+    capture = CloudinaryField('image', blank=True, null=True)
 
     def save(self, *args, **kwargs):
         if not self.code:
