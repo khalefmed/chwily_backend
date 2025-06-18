@@ -49,6 +49,7 @@ class User(AbstractUser):
         ('super_admin', 'Super Admin'),
     ]
     type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default='simple')
+    fcm_token = models.CharField(max_length=250, default='')
 
     USERNAME_FIELD = 'phone'
     REQUIRED_FIELDS = ['email', 'first_name', 'last_name']
