@@ -13,6 +13,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 import json
 
+from firebase_admin import messaging
+from .firebase_init import *
+
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -43,7 +46,7 @@ class LoginView(TokenObtainPairView):
 
         phone = serializer.validated_data['phone']
         password = serializer.validated_data['password']
-        fcm_token = request.data.get('fcm_token')  # <-- Récupère le token FCM s’il est fourni
+        fcm_token = request.data.get('fcm_token')  
 
         user = User.objects.filter(phone=phone).first()
 
@@ -62,6 +65,7 @@ class LoginView(TokenObtainPairView):
                     'token': str(refresh.access_token),
                     'user': user_data,
                 }
+                
 
                 return Response(data, status=status.HTTP_200_OK)
 
@@ -150,7 +154,6 @@ class AddCommandeView(APIView):
             'phone': request.data.get('phone'),
             'user': request.user.id,
             'title': request.data.get('title'),
-            
         }
 
         # Check if an image was uploaded and add it to the data
@@ -177,6 +180,7 @@ class AddCommandeView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             item_serializer.save()
+
 
         return Response(CommandeSerializer(commande).data, status=status.HTTP_201_CREATED)
 
@@ -282,6 +286,12 @@ class ChangeCommandeStatusView(APIView):
         commande = get_object_or_404(Commande, pk=pk)
         commande.status = new_status
         commande.save()
+                
+        send_notification(
+            'Status changed', 
+            f'Commande {commande.code} - {commande.phone} is now {commande.status}',
+            request.user.fcm_token
+        )
         return Response({'detail': 'Status updated successfully', 'commande': CommandeSerializer(commande).data})
     
 
@@ -336,4 +346,75 @@ def check_phone_exists(request):
 
     exists = User.objects.filter(phone=phone).exists()
     return Response({"exists": exists})
+
+
+
+
+
+
+
+
+
+
+
+
+################## FIREBASE CONFIG
+
+
+
+def send_notification(title, body, token):
+    title = title
+    body = body
+
+    message = messaging.Message(
+        notification=messaging.Notification(
+            title=title,
+            body=body,
+        ),
+        token=token,  
+    )
+
+    response = messaging.send(message)
+    print("Message envoyé avec ID:", response)
+
+
+
+def send_notifications_to_admins(title, body, token):
+    title = title
+    body = body
+
+    admins = User.objects.filter(type='admin')
+
+    if admins :
+        for admin in admins :
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body,
+                ),
+                token=token,  
+            )
+
+            response = messaging.send(message)
+            print("Message envoyé avec ID:", response)
+
+
+
+# @login_required
+# def send_notification_view(request):
+#     if request.method == 'POST':
+#         form = NotificationForm(request.POST)
+#         if form.is_valid():
+#             title = form.cleaned_data['title']
+#             body = form.cleaned_data['body']
+
+#             message = messaging.Message(
+#                 notification=messaging.Notification(title=title, body=body),
+#                 topic='all-users'
+#             )
+#             messaging.send(message)
+#             return render(request, 'core/send_notification.html', {'form': form, 'success': True})
+#     else:
+#         form = NotificationForm()
+#     return render(request, 'core/send_notification.html', {'form': form})
 
