@@ -14,6 +14,7 @@ django-phonenumber-field==8.1.0
 djangorestframework==3.16.0
 djangorestframework_simplejwt==5.5.0
 firebase-admin==6.9.0
+git-filter-repo==2.47.0
 google-api-core==2.25.1
 google-api-python-client==2.173.0
 google-auth==2.40.3
@@ -47,6 +48,7 @@ pyasn1_modules==0.4.2
 pycparser==2.22
 PyJWT==2.9.0
 pyparsing==3.2.3
+python-decouple==3.8
 requests==2.32.4
 rsa==4.9.1
 six==1.17.0
