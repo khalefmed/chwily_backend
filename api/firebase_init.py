@@ -1,9 +1,8 @@
-from decouple import config
-import firebase_admin
-from firebase_admin import credentials, messaging
+import os
+from firebase_admin import credentials, initialize_app
 
-cred_path = config("GOOGLE_APPLICATION_CREDENTIALS")
+cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
-if not firebase_admin._apps:
+if not initialize_app._apps:
     cred = credentials.Certificate(cred_path)
-    firebase_admin.initialize_app(cred)
+    initialize_app(cred)
