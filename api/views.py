@@ -289,11 +289,11 @@ class ChangeCommandeStatusView(APIView):
 
         print(request.user.fcm_token)
                 
-        # send_notification(
-        #     'Status changed', 
-        #     f'Commande {commande.code} - {commande.phone} is now {commande.status}',
-        #     'fkEK49K7T52embKt2cCC-A:APA91bH7-02e_CMFT6xHt7bYODTFwgi5HnAGVKzd1IJuM3BPTWHiIke5WQiiPzcpWXIlOXB9k-spFIjX-Kc4iDqEgrrKiAjgZlYVXpxiF-E3sAmqtEObs_A'
-        # )
+        send_notification(
+            'Status changed', 
+            f'Commande {commande.code} - {commande.phone} is now {commande.status}',
+            'fkEK49K7T52embKt2cCC-A:APA91bH7-02e_CMFT6xHt7bYODTFwgi5HnAGVKzd1IJuM3BPTWHiIke5WQiiPzcpWXIlOXB9k-spFIjX-Kc4iDqEgrrKiAjgZlYVXpxiF-E3sAmqtEObs_A'
+        )
         return Response({'detail': 'Status updated successfully', 'commande': CommandeSerializer(commande).data})
     
 
