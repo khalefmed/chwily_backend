@@ -286,12 +286,14 @@ class ChangeCommandeStatusView(APIView):
         commande = get_object_or_404(Commande, pk=pk)
         commande.status = new_status
         commande.save()
+
+        print(request.user.fcm_token)
                 
-        send_notification(
-            'Status changed', 
-            f'Commande {commande.code} - {commande.phone} is now {commande.status}',
-            request.user.fcm_token
-        )
+        # send_notification(
+        #     'Status changed', 
+        #     f'Commande {commande.code} - {commande.phone} is now {commande.status}',
+        #     'fkEK49K7T52embKt2cCC-A:APA91bH7-02e_CMFT6xHt7bYODTFwgi5HnAGVKzd1IJuM3BPTWHiIke5WQiiPzcpWXIlOXB9k-spFIjX-Kc4iDqEgrrKiAjgZlYVXpxiF-E3sAmqtEObs_A'
+        # )
         return Response({'detail': 'Status updated successfully', 'commande': CommandeSerializer(commande).data})
     
 
@@ -361,21 +363,22 @@ def check_phone_exists(request):
 ################## FIREBASE CONFIG
 
 
-
 def send_notification(title, body, token):
-    title = title
-    body = body
 
+    print(token)
     message = messaging.Message(
         notification=messaging.Notification(
             title=title,
             body=body,
         ),
-        token=token,  
+        token=token,
     )
 
-    response = messaging.send(message)
-    print("Message envoyé avec ID:", response)
+    try:
+        response = messaging.send(message)
+        print("✅ Notification envoyée avec ID:", response)
+    except Exception as e:
+        print("❌ Erreur lors de l'envoi de la notification :", e)
 
 
 
