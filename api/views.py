@@ -154,6 +154,8 @@ class AddCommandeView(APIView):
         commande_data = {
             'prix': request.data.get('prix'),
             'location': request.data.get('location'),
+            'livraison': request.data.get('livraison'),
+            'location': request.data.get('location'),
             'phone': request.data.get('phone'),
             'user': request.user.id,
             'title': request.data.get('title'),
