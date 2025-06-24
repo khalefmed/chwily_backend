@@ -49,6 +49,7 @@ class User(AbstractUser):
         ('super_admin', 'Super Admin'),
     ]
     type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default='simple')
+    default_lang = models.CharField(max_length=5, default='fr')
     fcm_token = models.CharField(max_length=250, default='')
 
     USERNAME_FIELD = 'phone'
@@ -77,6 +78,7 @@ class Category(models.Model):
     price3 = models.FloatField()
     livraison = models.FloatField()
     type = models.CharField(max_length=50)
+    is_big_steak = models.BooleanField(default=False)
     type_class = models.CharField(max_length=50)
 
     def __str__(self):
@@ -90,6 +92,7 @@ class Commande(models.Model):
     STATUS_CHOICES = [
         ('waiting', 'Waiting'),
         ('paid', 'Paid'),
+        ('rejected', 'Rejected'),
         ('loading', 'Loading'),
         ('delivered', 'Delivered'),
     ]
@@ -102,6 +105,7 @@ class Commande(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
     location = models.TextField()
     phone = models.CharField(max_length=100, default='') 
+    avec_6begat = models.BooleanField(default=False) 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     capture = CloudinaryField('image', blank=True, null=True)
 

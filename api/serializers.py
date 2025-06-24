@@ -9,7 +9,7 @@ class LoginSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta: 
         model = User
-        fields = ['id', 'username', 'phone', 'first_name', 'last_name', 'type', 'password']
+        fields = ['id', 'username', 'phone', 'first_name', 'last_name', 'type', 'default_lang', 'password']
         extra_kwargs = {
             'password': {'write_only': True}
         }
@@ -36,13 +36,13 @@ class CategorySerializer(serializers.ModelSerializer):
 class CategoryDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ['id', 'name_fr', 'image', 'name_ar', 'price1', 'price2', 'price3', 'livraison', 'type', 'type_class']
+        fields = ['id', 'name_fr', 'image', 'name_ar', 'price1', 'price2', 'price3', 'livraison', 'is_big_steak', 'type', 'type_class']
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'phone', 'type', 'first_name', 'last_name']
+        fields = ['id', 'username', 'phone', 'type', 'first_name', 'last_name', ]
 
 
 class ItemCommandeSerializer(serializers.ModelSerializer):
@@ -65,10 +65,10 @@ class CommandeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Commande
         fields = [
-            'id', 'title', 'code', 'prix', 'date', 'status', 'location', 'livraison', 'capture',
+            'id', 'title', 'code', 'prix', 'date', 'status', 'location', 'livraison', 'capture', 'avec_6begat'
             'phone', 'user', 'items'
         ]
 
     def create(self, validated_data):
-        user = self.context['user']  # get user from context
+        user = self.context['user'] 
         return Commande.objects.create(user=user, **validated_data)
