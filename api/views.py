@@ -183,6 +183,9 @@ class AddCommandeView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             item_serializer.save()
+        
+
+        send_notifications_to_admins(f'New Command', f'An new command added by {commande.phone} with code {commande.code}')
 
 
         return Response(CommandeSerializer(commande).data, status=status.HTTP_201_CREATED)
@@ -295,7 +298,7 @@ class ChangeCommandeStatusView(APIView):
         send_notification(
             'Status changed', 
             f'Commande {commande.code} - {commande.phone} is now {commande.status}',
-            'fkEK49K7T52embKt2cCC-A:APA91bH7-02e_CMFT6xHt7bYODTFwgi5HnAGVKzd1IJuM3BPTWHiIke5WQiiPzcpWXIlOXB9k-spFIjX-Kc4iDqEgrrKiAjgZlYVXpxiF-E3sAmqtEObs_A'
+            commande.user.fcm_token
         )
         return Response({'detail': 'Status updated successfully', 'commande': CommandeSerializer(commande).data})
     
@@ -385,11 +388,11 @@ def send_notification(title, body, token):
 
 
 
-def send_notifications_to_admins(title, body, token):
+def send_notifications_to_admins(title, body):
     title = title
     body = body
 
-    admins = User.objects.filter(type='admin')
+    admins = User.objects.filter(type__in=['admin', 'super_admin'])
 
     if admins :
         for admin in admins :
@@ -398,7 +401,7 @@ def send_notifications_to_admins(title, body, token):
                     title=title,
                     body=body,
                 ),
-                token=token,  
+                token=admin.fcm_token,  
             )
 
             response = messaging.send(message)
