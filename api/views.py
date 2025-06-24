@@ -46,18 +46,21 @@ class LoginView(TokenObtainPairView):
 
         phone = serializer.validated_data['phone']
         password = serializer.validated_data['password']
-        fcm_token = request.data.get('fcm_token')  
+        fcm_token = request.data.get('fcm_token') 
+
+        print('The token form request is : {fcm_token}') 
 
         user = User.objects.filter(phone=phone).first()
 
         if user:
             user = authenticate(request, phone=phone, password=password)
             if user:
-                # Met à jour le FCM token s’il est fourni
                 if fcm_token:
+                    print('in fcm_token')
                     user.fcm_token = fcm_token
                     user.save(update_fields=['fcm_token'])
 
+                print('The users token now is : {user.fcm_token}')
                 refresh = RefreshToken.for_user(user)
                 user_data = UserDetailSerializer(user).data
 
