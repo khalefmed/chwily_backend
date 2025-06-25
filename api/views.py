@@ -150,12 +150,12 @@ class AddCommandeView(APIView):
         if not isinstance(items_data, list):
             return Response({'detail': 'A list of items is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Prepare data dict for serializer, including the image file if present
+
+        print(request.data.get('livraison'))
         commande_data = {
             'prix': request.data.get('prix'),
             'location': request.data.get('location'),
             'livraison': request.data.get('livraison'),
-            'location': request.data.get('location'),
             'phone': request.data.get('phone'),
             'user': request.user.id,
             'title': request.data.get('title'),
@@ -187,7 +187,12 @@ class AddCommandeView(APIView):
             item_serializer.save()
         
 
-        send_notifications_to_admins(f'New Command', f'An new command added by {commande.phone} with code {commande.code}')
+        user = request.user
+
+        if user.default_lang == 'ar' :
+            send_notifications_to_admins('طلب جديد', f'تمت إضافة طلب جديد من الرقم {commande.phone} بالكود {commande.code}')
+        else :
+            send_notifications_to_admins(f'Nouvelle commande', f'Nouvelle commande ajoutee par {commande.phone} avec le code {commande.code}')
 
 
         return Response(CommandeSerializer(commande).data, status=status.HTTP_201_CREATED)
@@ -296,12 +301,41 @@ class ChangeCommandeStatusView(APIView):
         commande.save()
 
         print(request.user.fcm_token)
+        user = request.user
+
+
+
+        statuses = {
+            'ar': {
+                'waiting': 'قيد الانتظار',
+                'paid': 'مدفوع',
+                'loading': 'قيد المعالجة',
+                'delivred': 'تم التوصيل',
+                'rejected': 'مرفوض',
+            },
+            'fr' : {
+                'waiting' : 'en attente',
+                'paid' : 'paye',
+                'loading' : 'en cours',
+                'delivred' : 'livre',
+                'rejected' : 'rejecte',
+            }
+        }
+
+
                 
-        send_notification(
-            'Status changed', 
-            f'Commande {commande.code} - {commande.phone} is now {commande.status}',
-            commande.user.fcm_token
-        )
+        if user.default_lang == 'ar' :
+            send_notification(
+                statuses['ar'][commande.status], 
+                f'تم تغيير حالة طلبك {commande.code}',
+                commande.user.fcm_token
+            )
+        else :
+            send_notification(
+                statuses['fr'][commande.status], 
+                f'Votre commande {commande.code} a change de status ',
+                commande.user.fcm_token
+            )
         return Response({'detail': 'Status updated successfully', 'commande': CommandeSerializer(commande).data})
     
 
@@ -409,6 +443,24 @@ def send_notifications_to_admins(title, body):
             response = messaging.send(message)
             print("Message envoyé avec ID:", response)
 
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_default_lang(request):
+    user = request.user 
+    new_lang = request.data.get('default_lang')
+
+    if new_lang not in ['fr', 'ar']:  
+        return Response({"error": "Langue invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.default_lang = new_lang
+    user.save()
+
+    return Response({
+        "message": "Langue par défaut mise à jour avec succès.",
+        "default_lang": user.default_lang
+    }, status=status.HTTP_200_OK)
 
 
 # @login_required
