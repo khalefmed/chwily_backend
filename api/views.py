@@ -292,7 +292,7 @@ class ChangeCommandeStatusView(APIView):
 
     def post(self, request, pk):
         new_status = request.data.get('status')
-        if new_status not in ['waiting', 'paid', 'loading', 'delivered']:
+        if new_status not in ['waiting', 'paid', 'loading', 'delivered', 'rejected']:
             return Response({'detail': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
 
         commande = get_object_or_404(Commande, pk=pk)
@@ -309,14 +309,14 @@ class ChangeCommandeStatusView(APIView):
                 'waiting': 'قيد الانتظار',
                 'paid': 'مدفوع',
                 'loading': 'قيد المعالجة',
-                'delivred': 'تم التوصيل',
+                'delivered': 'تم التوصيل',
                 'rejected': 'مرفوض',
             },
             'fr' : {
                 'waiting' : 'en attente',
                 'paid' : 'paye',
                 'loading' : 'en cours',
-                'delivred' : 'livre',
+                'delivered' : 'livre',
                 'rejected' : 'rejecte',
             }
         }
