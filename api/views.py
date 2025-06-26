@@ -48,7 +48,7 @@ class LoginView(TokenObtainPairView):
         password = serializer.validated_data['password']
         fcm_token = request.data.get('fcm_token') 
 
-        print('The token form request is : {fcm_token}') 
+        print(f'The token from request is: {fcm_token}') 
 
         user = User.objects.filter(phone=phone).first()
 
@@ -56,19 +56,19 @@ class LoginView(TokenObtainPairView):
             user = authenticate(request, phone=phone, password=password)
             if user:
                 if fcm_token:
-                    print('in fcm_token')
+                    print('Saving fcm_token...')
                     user.fcm_token = fcm_token
                     user.save(update_fields=['fcm_token'])
 
-                print('The users token now is : {user.fcm_token}')
+                print(f'The user\'s token now is: {user.fcm_token}')
                 refresh = RefreshToken.for_user(user)
                 user_data = UserDetailSerializer(user).data
 
                 data = {
-                    'token': str(refresh.access_token),
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),  # ✅ Add this line
                     'user': user_data,
                 }
-                
 
                 return Response(data, status=status.HTTP_200_OK)
 
@@ -456,7 +456,7 @@ class LogoutView(APIView):
         try:
             token = RefreshToken(refresh_token)
             token.blacklist()
-            
+
             request.user.fcm_token = ""
             request.user.save(update_fields=["fcm_token"])
 
