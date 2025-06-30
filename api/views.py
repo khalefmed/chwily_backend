@@ -418,7 +418,7 @@ def send_notification(title, body, token):
     try:
         if token != '':
             response = messaging.send(message)
-        print("✅ Notification envoyée avec ID:", response)
+            print("✅ Notification envoyée avec ID:", response)
     except Exception as e:
         print("❌ Erreur lors de l'envoi de la notification :", e)
 
@@ -442,7 +442,7 @@ def send_notifications_to_admins(title, body):
 
             if admin.fcm_token != '':
                 response = messaging.send(message)
-            print("Message envoyé avec ID:", response)
+                print("Message envoyé avec ID:", response)
 
 
 
