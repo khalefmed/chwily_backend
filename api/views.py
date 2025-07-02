@@ -1,3 +1,4 @@
+from django.db import DatabaseError
 from rest_framework import viewsets, generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -393,6 +394,19 @@ def check_phone_exists(request):
 
 
 
+class DeleteAccountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        user = request.user
+        try:
+            user.delete()
+            return Response({"detail": "Account deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+        except DatabaseError as e:
+            return Response(
+                {"detail": "An error occurred while deleting the account.", "error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 

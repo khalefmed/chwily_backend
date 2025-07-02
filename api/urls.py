@@ -14,6 +14,7 @@ urlpatterns = [
     path('signup/', SignupView.as_view(), name='signup'),
     path('check-phone/', check_phone_exists, name='check-phone'),
     path('update-lang/', update_default_lang),
+    path('me/delete/', DeleteAccountView.as_view(), name='delete-account'),
 
 
     # Custom category views
