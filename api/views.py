@@ -402,14 +402,14 @@ def check_phone_exists(request):
     if purpose == 'signup' and not exists:
         code = generate_otp()
         send_validation_sms(phone, code)
-        return Response({"otp_sent": True, "exists": False})
+        return Response({"otp_sent": code, "exists": False})
 
     elif purpose == 'forgot_password' and exists:
         code = generate_otp()
         send_validation_sms(phone, code)
-        return Response({"otp_sent": True, "exists": True})
+        return Response({"otp_sent": code, "exists": True})
 
-    return Response({"otp_sent": False, "exists": exists})
+    return Response({"otp_sent": code, "exists": exists})
 
 
 
