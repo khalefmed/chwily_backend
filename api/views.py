@@ -1,4 +1,6 @@
+import random
 from django.db import DatabaseError
+import requests
 from rest_framework import viewsets, generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -380,18 +382,57 @@ class SignupView(APIView):
 
 
 
+def generate_otp():
+    return str(random.randint(100000, 999999))
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def check_phone_exists(request):
     phone = request.data.get('phone')
+    purpose = request.data.get('purpose') 
 
-    if phone is None:
-        return Response({"error": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if phone is None or purpose not in ['signup', 'forgot_password']:
+        return Response(
+            {"error": "Phone and valid purpose ('signup' or 'forgot_password') are required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     exists = User.objects.filter(phone=phone).exists()
-    return Response({"exists": exists})
+
+    if purpose == 'signup' and not exists:
+        code = generate_otp()
+        send_validation_sms(phone, code)
+        return Response({"otp_sent": True, "exists": False})
+
+    elif purpose == 'forgot_password' and exists:
+        code = generate_otp()
+        send_validation_sms(phone, code)
+        return Response({"otp_sent": True, "exists": True})
+
+    return Response({"otp_sent": False, "exists": exists})
 
 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password(request):
+    phone = request.data.get('phone')
+    new_password = request.data.get('new_password')
+
+    if not phone or not new_password:
+        return Response(
+            {"error": "Phone number and new password are required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        user = User.objects.get(phone=phone)
+        user.set_password(new_password)
+        user.save()
+        return Response({"success": "Password updated successfully."}, status=status.HTTP_200_OK)
+
+    except User.DoesNotExist:
+        return Response({"error": "User with this phone number does not exist."}, status=status.HTTP_404_NOT_FOUND)
 
 
 class DeleteAccountView(APIView):
@@ -409,6 +450,32 @@ class DeleteAccountView(APIView):
             )
 
 
+
+def send_validation_sms(phone_number: str, code: str):
+    url = 'https://chinguisoft.com/api/sms/validation/wQepFqCYVt3y40Ff'
+    headers = {
+        'Validation-token': 'MnQK3bW88JD5KPPUzeB5DDxuU4RwXT71',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        "phone": phone_number,
+        "lang": "fr",
+        "code": code
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()  # Will raise an exception for HTTP error codes
+        print("Message sent successfully:", response.json())
+        return response.json()
+    except requests.exceptions.HTTPError as errh:
+        print("HTTP Error:", errh)
+    except requests.exceptions.ConnectionError as errc:
+        print("Connection Error:", errc)
+    except requests.exceptions.Timeout as errt:
+        print("Timeout Error:", errt)
+    except requests.exceptions.RequestException as err:
+        print("Request Error:", err)
 
 
 
