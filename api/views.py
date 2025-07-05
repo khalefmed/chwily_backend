@@ -462,6 +462,8 @@ def send_validation_sms(phone_number: str, code: str):
         "lang": "fr",
         "code": code
     }
+    print('otp code')
+    print(code)
 
     try:
         response = requests.post(url, json=payload, headers=headers)
