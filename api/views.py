@@ -82,6 +82,7 @@ class LoginView(TokenObtainPairView):
 
 # --- Category details by type ---
 class GuewdaCategoryView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request):
         categories = Category.objects.filter(type='guewda').order_by('id')
         serializer = CategorySerializer(categories, many=True)
@@ -96,6 +97,7 @@ class GuewdaCategoryView(APIView):
 
 
 class SayraCategoryView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request):
         categories = Category.objects.filter(type='sayra').order_by('id')
         serializer = CategorySerializer(categories, many=True)
@@ -112,6 +114,7 @@ class SayraCategoryView(APIView):
 
 
 class MechwiCategoryView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request):
         categories = Category.objects.filter(type='mechwi').order_by('id')
         serializer = CategorySerializer(categories, many=True)
