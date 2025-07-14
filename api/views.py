@@ -88,12 +88,13 @@ class GuewdaCategoryView(APIView):
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 
-        if request.user :
-            if hasattr(request.user, 'type') and request.user.type == 'traitor':
+        if request.user.is_authenticated:
+            if getattr(request.user, 'type', None) == 'traitor':
                 for item in data:
                     item['price1'] = round(item['price1'] * 0.8, 2)
                     item['price2'] = round(item['price2'] * 0.8, 2)
                     item['price3'] = round(item['price3'] * 0.8, 2)
+        return Response(data)
 
 
 class SayraCategoryView(APIView):
@@ -103,8 +104,8 @@ class SayraCategoryView(APIView):
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 
-        if request.user :
-            if hasattr(request.user, 'type') and request.user.type == 'traitor':
+        if request.user.is_authenticated:
+            if getattr(request.user, 'type', None) == 'traitor':
                 for item in data:
                     item['price1'] = round(item['price1'] * 0.8, 2)
                     item['price2'] = round(item['price2'] * 0.8, 2)
@@ -120,8 +121,8 @@ class MechwiCategoryView(APIView):
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 
-        if request.user :
-            if hasattr(request.user, 'type') and request.user.type == 'traitor':
+        if request.user.is_authenticated:
+            if getattr(request.user, 'type', None) == 'traitor':
                 for item in data:
                     item['price1'] = round(item['price1'] * 0.8, 2)
                     item['price2'] = round(item['price2'] * 0.8, 2)
