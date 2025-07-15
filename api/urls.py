@@ -28,6 +28,7 @@ urlpatterns = [
     path('mes_commandes/', MesCommandesView.as_view(), name='mes-commandes'),
     path('commandes/add/', AddCommandeView.as_view(), name='add-commande'),
     path('commandes/pending/', PendingCommandesView.as_view(), name='pending-commandes'),  #done
+    path('commandes/pending2/', PendingCommandesView2.as_view(), name='pending2-commandes'),  #done
     path('commandes/<int:pk>/change_status/', ChangeCommandeStatusView.as_view(), name='change-commande-status'),
 
     # User-related views

@@ -250,11 +250,23 @@ class PendingCommandesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        waiting = Commande.objects.filter(status='waiting')
+        paid = Commande.objects.filter(status='paid')
         loading = Commande.objects.filter(status='loading')
         return Response({
-            "waiting": CommandeSerializer(waiting, many=True).data,
+            "paid": CommandeSerializer(paid, many=True).data,
             "loading": CommandeSerializer(loading, many=True).data
+        })
+    
+
+class PendingCommandesView2(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        waiting = Commande.objects.filter(status='waiting')
+        rejected = Commande.objects.filter(status='rejected')
+        return Response({
+            "waiting": CommandeSerializer(waiting, many=True).data,
+            "rejected": CommandeSerializer(rejected, many=True).data
         })
     
 
