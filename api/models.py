@@ -101,7 +101,7 @@ class Commande(models.Model):
     livraison = models.FloatField(default=0)
     title = models.CharField(max_length=100, default='')  
     code = models.CharField(max_length=100, default='', unique=True, editable=False)
-    date = models.DateField(auto_now_add=True)
+    date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
     location = models.TextField()
     phone = models.CharField(max_length=100, default='') 
