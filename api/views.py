@@ -84,32 +84,32 @@ class LoginView(TokenObtainPairView):
 class GuewdaCategoryView(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
-        categories = Category.objects.filter(type='guewda').order_by('id')
+        categories = Category.objects.filter(type='guewda').order_by('order')
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 
         if request.user.is_authenticated:
             if getattr(request.user, 'type', None) == 'traitor':
                 for item in data:
-                    item['price1'] = round(item['price1'] * 0.8, 2)
-                    item['price2'] = round(item['price2'] * 0.8, 2)
-                    item['price3'] = round(item['price3'] * 0.8, 2)
+                    item['price1'] = round(item['price1'] * 0.95, 2)
+                    item['price2'] = round(item['price2'] * 0.95, 2)
+                    item['price3'] = round(item['price3'] * 0.95, 2)
         return Response(data)
 
 
 class SayraCategoryView(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
-        categories = Category.objects.filter(type='sayra').order_by('id')
+        categories = Category.objects.filter(type='sayra').order_by('order')
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 
         if request.user.is_authenticated:
             if getattr(request.user, 'type', None) == 'traitor':
                 for item in data:
-                    item['price1'] = round(item['price1'] * 0.8, 2)
-                    item['price2'] = round(item['price2'] * 0.8, 2)
-                    item['price3'] = round(item['price3'] * 0.8, 2)
+                    item['price1'] = round(item['price1'] * 0.95, 2)
+                    item['price2'] = round(item['price2'] * 0.95, 2)
+                    item['price3'] = round(item['price3'] * 0.95, 2)
 
         return Response(data)
 
@@ -117,16 +117,16 @@ class SayraCategoryView(APIView):
 class MechwiCategoryView(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
-        categories = Category.objects.filter(type='mechwi').order_by('id')
+        categories = Category.objects.filter(type='mechwi').order_by('order')
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 
         if request.user.is_authenticated:
             if getattr(request.user, 'type', None) == 'traitor':
                 for item in data:
-                    item['price1'] = round(item['price1'] * 0.8, 2)
-                    item['price2'] = round(item['price2'] * 0.8, 2)
-                    item['price3'] = round(item['price3'] * 0.8, 2)
+                    item['price1'] = round(item['price1'] * 0.95, 2)
+                    item['price2'] = round(item['price2'] * 0.95, 2)
+                    item['price3'] = round(item['price3'] * 0.95, 2)
 
         return Response(data)
 
