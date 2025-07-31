@@ -80,6 +80,8 @@ class Category(models.Model):
     type = models.CharField(max_length=50)
     is_big_steak = models.BooleanField(default=False)
     type_class = models.CharField(max_length=50)
+    order = models.IntegerField(default=0)
+
 
     def __str__(self):
         return f'{self.name_fr} - {self.type}'
@@ -99,7 +101,7 @@ class Commande(models.Model):
 
     prix = models.FloatField()
     livraison = models.FloatField(default=0)
-    title = models.CharField(max_length=100, default='')  
+    title = models.CharField(max_length=100, default='', null=True)  
     code = models.CharField(max_length=100, default='', unique=True, editable=False)
     date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
