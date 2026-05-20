@@ -137,5 +137,6 @@ class ItemCommande(models.Model):
         return f"ItemCommande {self.id} - x{self.number}"
 
 
-
+class Poster(models.Model):
+    image = CloudinaryField('image')
 

@@ -13,7 +13,7 @@ from .serializers import *
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 import json
 
 from firebase_admin import messaging
@@ -34,6 +34,12 @@ class CategoryViewSet(viewsets.ModelViewSet):
 class CommandeViewSet(viewsets.ModelViewSet):
     queryset = Commande.objects.all()
     serializer_class = CommandeSerializer
+
+class PosterViewSet(viewsets.ModelViewSet):
+    queryset = Poster.objects.all()
+    permission_classes = [AllowAny]
+    serializer_class = PosterSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
 
 class ItemCommandeViewSet(viewsets.ModelViewSet):
@@ -70,7 +76,12 @@ class LoginView(TokenObtainPairView):
 
                 data = {
                     'access': str(refresh.access_token),
-                    'refresh': str(refresh),  # ✅ Add this line
+                    'refresh': str(refresh),
+                    "minimum_version": "1.0.3",
+                    "latest_version": "1.0.3",
+                    "force_update": True,
+                    "store_url": "https://play.google.com/store/apps/details?id=com.chwily.app",
+                    "appstore_url": "https://apps.apple.com/mr/app/chwily/id6747934029",
                     'user': user_data,
                 }
 
@@ -119,6 +130,41 @@ class MechwiCategoryView(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
         categories = Category.objects.filter(type='mechwi').order_by('order')
+        serializer = CategorySerializer(categories, many=True)
+        data = serializer.data
+
+        if request.user.is_authenticated:
+            if getattr(request.user, 'type', None) == 'traitor':
+                for item in data:
+                    item['price1'] = round(item['price1'] * 0.95, 2)
+                    item['price2'] = round(item['price2'] * 0.95, 2)
+                    item['price3'] = round(item['price3'] * 0.95, 2)
+
+        return Response(data)
+    
+
+class PoissonCategoryView(APIView):
+    permission_classes = [AllowAny]
+    def get(self, request):
+        categories = Category.objects.filter(type='poisson').order_by('order')
+        serializer = CategorySerializer(categories, many=True)
+        data = serializer.data
+
+        if request.user.is_authenticated:
+            if getattr(request.user, 'type', None) == 'traitor':
+                for item in data:
+                    item['price1'] = round(item['price1'] * 0.95, 2)
+                    item['price2'] = round(item['price2'] * 0.95, 2)
+                    item['price3'] = round(item['price3'] * 0.95, 2)
+
+        return Response(data)
+
+
+
+class MesPlatsCategoryView(APIView):
+    permission_classes = [AllowAny]
+    def get(self, request):
+        categories = Category.objects.filter(type='mes_plats').order_by('order')
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 
@@ -496,6 +542,47 @@ def send_validation_sms(phone_number: str, code: str):
         print("Timeout Error:", errt)
     except requests.exceptions.RequestException as err:
         print("Request Error:", err)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def send_notifications(request):
+    title = request.data.get('title')
+    body = request.data.get('body')
+
+    # 1. Validation simple
+    if not title or not body:
+        return Response(
+            {"error": "Le titre et le message sont requis."}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    message = messaging.Message(
+        notification=messaging.Notification(
+            title=title,
+            body=body,
+        ),
+        # On peut aussi ajouter des données (data) pour ouvrir une page spécifique
+        data={
+            "click_action": "FLUTTER_NOTIFICATION_CLICK",
+            "type": "broadcast"
+        },
+        topic='all-users',
+    )
+
+    try:
+        response = messaging.send(message)
+        return Response({
+            "success": "Notification envoyée avec succès.",
+            "message_id": response
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print(f"❌ Erreur FCM: {str(e)}")
+        return Response(
+            {"error": "Une erreur est survenue lors de l'envoi."}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Category, Commande, ItemCommande
+from .models import Poster, User, Category, Commande, ItemCommande
 
 class LoginSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
@@ -72,3 +72,10 @@ class CommandeSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user = self.context['user'] 
         return Commande.objects.create(user=user, **validated_data)
+    
+
+
+class PosterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Poster
+        fields = '__all__'

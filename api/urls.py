@@ -7,6 +7,7 @@ router.register('users', UserViewSet)
 router.register('categories', CategoryViewSet)
 router.register('commandes', CommandeViewSet)
 router.register('items', ItemCommandeViewSet)
+router.register('posters', PosterViewSet)
 
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
@@ -23,6 +24,8 @@ urlpatterns = [
     path('category/guewda/', GuewdaCategoryView.as_view(), name='category-guewda'),
     path('category/sayra/', SayraCategoryView.as_view(), name='category-sayra'),
     path('category/mechwi/', MechwiCategoryView.as_view(), name='category-mechwi'),
+    path('category/poisson/', PoissonCategoryView.as_view(), name='category-poisson'),
+    path('category/mes_plats/', MesPlatsCategoryView.as_view(), name='category-mes_plats'),
 
     # Commande-related views
     path('mes_commandes/', MesCommandesView.as_view(), name='mes-commandes'),
@@ -30,6 +33,11 @@ urlpatterns = [
     path('commandes/pending/', PendingCommandesView.as_view(), name='pending-commandes'),  #done
     path('commandes/pending2/', PendingCommandesView2.as_view(), name='pending2-commandes'),  #done
     path('commandes/<int:pk>/change_status/', ChangeCommandeStatusView.as_view(), name='change-commande-status'),
+
+
+    path('posters/', PosterViewSet.as_view({'get': 'list', 'post': 'create', 'put': 'update', 'delete': 'destroy'}), name='poster-list'),
+
+    path('notifications/', send_notifications, name='send-notifications'),
 
     # User-related views
     path('update_password/', UpdatePasswordView.as_view(), name='update-password'),
