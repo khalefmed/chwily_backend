@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken,  TokenError
 from django.contrib.auth import authenticate
-from .models import User, Category, Commande, ItemCommande
+from .models import AppConfiguration, User, Category, Commande, ItemCommande
 from .serializers import *
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import AllowAny
@@ -20,6 +20,7 @@ import json
 from firebase_admin import messaging
 from .firebase_init import *
 from firebase_admin._messaging_utils import UnregisteredError
+import logging.config
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -74,6 +75,7 @@ class LoginView(TokenObtainPairView):
                 print(f'The user\'s token now is: {user.fcm_token}')
                 refresh = RefreshToken.for_user(user)
                 user_data = UserDetailSerializer(user).data
+                app_config = AppConfiguration.objects.first()
 
                 data = {
                     'access': str(refresh.access_token),
@@ -83,11 +85,11 @@ class LoginView(TokenObtainPairView):
                     "latest_version_ios": "1.0.3",
                     "latest_version_android": "1.0.3",
 
-                    "minimum_version_ios": config.minimum_version_ios if config else "1.0.0",
-                    "minimum_version_android": config.minimum_version_android if config else "1.0.0",
-                    "force_update": config.force_update if config else False,
-                    "store_url": config.store_url,
-                    "appstore_url": config.appstore_url,
+                    "minimum_version_ios": app_config.minimum_version_ios if app_config else "1.0.0",
+                    "minimum_version_android": app_config.minimum_version_android if app_config else "1.0.0",
+                    "force_update": app_config.force_update if app_config else False,
+                    "store_url": app_config.store_url,
+                    "appstore_url": app_config.appstore_url,
                     'user': user_data,
                 }
 
