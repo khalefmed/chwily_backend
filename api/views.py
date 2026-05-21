@@ -1,3 +1,4 @@
+from logging import config
 import random
 from django.db import DatabaseError
 import requests
@@ -78,14 +79,15 @@ class LoginView(TokenObtainPairView):
                     'access': str(refresh.access_token),
                     'refresh': str(refresh),
                     "minimum_version": "1.0.3",
-                    "minimum_version_ios": "1.0.3",
-                    "minimum_version_android": "1.0.3",
                     "latest_version": "1.0.3",
                     "latest_version_ios": "1.0.3",
                     "latest_version_android": "1.0.3",
-                    "force_update": True,
-                    "store_url": "https://play.google.com/store/apps/details?id=com.chwily.app",
-                    "appstore_url": "https://apps.apple.com/mr/app/chwily/id6747934029",
+
+                    "minimum_version_ios": config.minimum_version_ios if config else "1.0.0",
+                    "minimum_version_android": config.minimum_version_android if config else "1.0.0",
+                    "force_update": config.force_update if config else False,
+                    "store_url": config.store_url,
+                    "appstore_url": config.appstore_url,
                     'user': user_data,
                 }
 

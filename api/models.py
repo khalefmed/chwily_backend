@@ -140,3 +140,17 @@ class ItemCommande(models.Model):
 class Poster(models.Model):
     image = CloudinaryField('image')
 
+
+class AppConfiguration(models.Model):
+    minimum_version_android = models.CharField(max_length=10, default="1.0.0")
+    minimum_version_ios = models.CharField(max_length=10, default="1.0.0")
+    force_update = models.BooleanField(default=True)
+    store_url = models.URLField(default="https://play.google.com/store/apps/details?id=com.chwily.app")
+    appstore_url = models.URLField(default="https://apps.apple.com/mr/app/chwily/id6747934029")
+
+    class Meta:
+        verbose_name = "Configuration de l'Application"
+
+    def __str__(self):
+        return "Configuration Globale"
+
