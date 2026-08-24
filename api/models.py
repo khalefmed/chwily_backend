@@ -13,8 +13,8 @@ class CustomUserManager(BaseUserManager):
     def create_superuser(self, phone, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
-        extra_fields.setdefault('username', phone)  # Ajout de username par défaut
-        
+        extra_fields.setdefault('username', phone)
+
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Superuser must have is_staff=True.')
         if extra_fields.get('is_superuser') is not True:
@@ -23,8 +23,8 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(phone, password, **extra_fields)
 
     def create_user(self, phone, password=None, **extra_fields):
-        extra_fields.setdefault('username', phone)  # Ajout de username par défaut
-        
+        extra_fields.setdefault('username', phone)
+
         if not phone:
             raise ValueError('The mobile field must be set')
 
@@ -113,7 +113,6 @@ class Commande(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.code:
-            # Generate a short unique identifier (8 characters from UUID)
             unique_code = uuid.uuid4().hex[:8].upper()
             self.code = f"CM{unique_code}"
         super().save(*args, **kwargs)

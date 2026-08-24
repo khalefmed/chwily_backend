@@ -88,8 +88,8 @@ class LoginView(TokenObtainPairView):
                     "minimum_version_ios": app_config.minimum_version_ios if app_config else "1.0.0",
                     "minimum_version_android": app_config.minimum_version_android if app_config else "1.0.0",
                     "force_update": app_config.force_update if app_config else False,
-                    "store_url": app_config.store_url,
-                    "appstore_url": app_config.appstore_url,
+                    "store_url": app_config.store_url if app_config else "https://play.google.com/store/apps/details?id=com.chwily.app",
+                    "appstore_url": app_config.appstore_url if app_config else "https://apps.apple.com/mr/app/chwily/id6747934029",
                     'user': user_data,
                 }
 
@@ -100,7 +100,6 @@ class LoginView(TokenObtainPairView):
         return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
 
-# --- Category details by type ---
 class GuewdaCategoryView(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
@@ -186,7 +185,6 @@ class MesPlatsCategoryView(APIView):
         return Response(data)
 
 
-# --- Mes Commandes ---
 class MesCommandesView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -275,8 +273,6 @@ class UpdatePasswordView(APIView):
         return Response({"detail": "Password updated successfully"})
 
 
-# --- Update infos ---
-# views.py
 class UpdateUserNameView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -288,7 +284,6 @@ class UpdateUserNameView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# --- Me ---
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -481,7 +476,7 @@ def check_phone_exists(request):
         send_validation_sms(phone, code)
         return Response({"otp_sent": code, "exists": True})
 
-    return Response({"otp_sent": code, "exists": exists})
+    return Response({"otp_sent": None, "exists": exists})
 
 
 
@@ -539,7 +534,7 @@ def send_validation_sms(phone_number: str, code: str):
 
     try:
         response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()  # Will raise an exception for HTTP error codes
+        response.raise_for_status()
         print("Message sent successfully:", response.json())
         return response.json()
     except requests.exceptions.HTTPError as errh:
@@ -558,7 +553,6 @@ def send_notifications(request):
     title = request.data.get('title')
     body = request.data.get('body')
 
-    # 1. Validation simple
     if not title or not body:
         return Response(
             {"error": "Le titre et le message sont requis."}, 
@@ -570,7 +564,6 @@ def send_notifications(request):
             title=title,
             body=body,
         ),
-        # On peut aussi ajouter des données (data) pour ouvrir une page spécifique
         data={
             "click_action": "FLUTTER_NOTIFICATION_CLICK",
             "type": "broadcast"
@@ -597,9 +590,6 @@ def send_notifications(request):
 
 
 
-################## FIREBASE CONFIG
-
-
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def test_notification(request):
@@ -618,7 +608,6 @@ def test_notification(request):
 def send_notification(title, body, token):
     print(token)
 
-    # Skip empty or None tokens
     if not token:
         return
 
@@ -635,13 +624,10 @@ def send_notification(title, body, token):
         print("✅ Notification envoyée avec ID:", response)
 
     except UnregisteredError:
-        # Token no longer valid — skip silently
         pass
 
     except Exception:
-        # Any other Firebase error — skip silently
         pass
-
 
 
 def send_notifications_to_admins(title, body):
@@ -650,7 +636,6 @@ def send_notifications_to_admins(title, body):
     for admin in admins:
         token = admin.fcm_token
 
-        # Skip empty or None tokens
         if not token:
             continue  
 
@@ -667,11 +652,9 @@ def send_notifications_to_admins(title, body):
             print("Message envoyé avec ID:", response)
 
         except UnregisteredError:
-            # Token no longer valid — skip silently
             pass
 
         except Exception:
-            # Any other Firebase error — skip silently
             pass
 
 
@@ -716,23 +699,4 @@ def update_default_lang(request):
         "message": "Langue par défaut mise à jour avec succès.",
         "default_lang": user.default_lang
     }, status=status.HTTP_200_OK)
-
-
-# @login_required
-# def send_notification_view(request):
-#     if request.method == 'POST':
-#         form = NotificationForm(request.POST)
-#         if form.is_valid():
-#             title = form.cleaned_data['title']
-#             body = form.cleaned_data['body']
-
-#             message = messaging.Message(
-#                 notification=messaging.Notification(title=title, body=body),
-#                 topic='all-users'
-#             )
-#             messaging.send(message)
-#             return render(request, 'core/send_notification.html', {'form': form, 'success': True})
-#     else:
-#         form = NotificationForm()
-#     return render(request, 'core/send_notification.html', {'form': form})
 
