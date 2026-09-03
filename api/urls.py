@@ -26,9 +26,12 @@ urlpatterns = [
 
     path('mes_commandes/', MesCommandesView.as_view(), name='mes-commandes'),
     path('commandes/add/', AddCommandeView.as_view(), name='add-commande'),
-    path('commandes/pending/', PendingCommandesView.as_view(), name='pending-commandes'),
-    path('commandes/pending2/', PendingCommandesView2.as_view(), name='pending2-commandes'),
+    path('commandes/delivery-quote/', DeliveryQuoteView.as_view(), name='delivery-quote'),
+    path('commandes/status/<str:status_value>/', CommandesByStatusView.as_view(), name='commandes-by-status'),
     path('commandes/<int:pk>/change_status/', ChangeCommandeStatusView.as_view(), name='change-commande-status'),
+
+    path('location-points/', LocationPointListView.as_view(), name='location-points'),
+    path('delivery/webhook/<str:provider_code>/', DeliveryWebhookView.as_view(), name='delivery-webhook'),
 
 
     path('posters/', PosterViewSet.as_view({'get': 'list', 'post': 'create', 'put': 'update', 'delete': 'destroy'}), name='poster-list'),

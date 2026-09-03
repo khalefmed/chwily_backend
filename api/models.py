@@ -90,26 +90,126 @@ class Category(models.Model):
 
 
 
+class LocationPoint(models.Model):
+    """Point géographique pré-connu (quartier ou point de départ d'un provider).
+    Pas de carte affichée au client : il choisit un quartier par son nom."""
+    name = models.CharField(max_length=120, unique=True)
+    name_ar = models.CharField(max_length=120, default='', blank=True)
+    lat = models.FloatField()
+    lng = models.FloatField()
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class DeliveryProvider(models.Model):
+    """Partenaire de livraison (ex : Jemli). Chaque provider a son propre
+    point de départ isolé (cuisine ou boutique partenaire)."""
+    name = models.CharField(max_length=100, unique=True)
+    code = models.SlugField(max_length=50, unique=True)
+    base_url = models.URLField(default='https://api-jemli.oneposts.io/api/third-party/')
+    api_key = models.CharField(max_length=255, blank=True, default='')
+    api_secret = models.CharField(max_length=255, blank=True, default='')
+    origin_point = models.ForeignKey(
+        LocationPoint, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='providers',
+    )
+    webhook_secret = models.CharField(max_length=64, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+
+    def save(self, *args, **kwargs):
+        if not self.webhook_secret:
+            self.webhook_secret = uuid.uuid4().hex
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
+class DeliveryType(models.Model):
+    """Type d'article livrable (ex : mes_plats, poisson, l7am, sbou7).
+    Correspond à Category.type par égalité de `code`. Un `provider` nul
+    signifie livraison legacy (guewda / sayra / mechwi, calcul côté app)."""
+    code = models.SlugField(max_length=50, unique=True)
+    name_fr = models.CharField(max_length=100)
+    name_ar = models.CharField(max_length=100, default='', blank=True)
+    delivery_margin = models.FloatField(default=50)
+    provider = models.ForeignKey(
+        DeliveryProvider, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='delivery_types',
+    )
+    is_scheduled = models.BooleanField(
+        default=False,
+        help_text="Envoi différé au delivery_datetime choisi par le client (mes_plats).",
+    )
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.code
+
+
 class Commande(models.Model):
     STATUS_CHOICES = [
         ('waiting', 'Waiting'),
         ('paid', 'Paid'),
-        ('rejected', 'Rejected'),
+        ('looking_for_driver', 'Looking for driver'),
+        ('driver_assigned', 'Driver assigned'),
         ('loading', 'Loading'),
         ('delivered', 'Delivered'),
+        ('rejected', 'Rejected'),
+    ]
+
+    DISPATCH_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('scheduled', 'Scheduled'),
+        ('sent', 'Sent'),
+        ('failed', 'Failed'),
     ]
 
     prix = models.FloatField()
     livraison = models.FloatField(default=0)
-    title = models.CharField(max_length=100, default='', null=True)  
+    title = models.CharField(max_length=100, default='', null=True)
     code = models.CharField(max_length=100, default='', unique=True, editable=False)
     date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
     location = models.TextField()
-    phone = models.CharField(max_length=100, default='') 
-    avec_6begat = models.BooleanField(default=False) 
+    phone = models.CharField(max_length=100, default='')
+    avec_6begat = models.BooleanField(default=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     capture = CloudinaryField('image', blank=True, null=True)
+
+    # --- Livraison via partenaire (Jemli & co) ---
+    delivery_type = models.ForeignKey(
+        DeliveryType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='commandes',
+    )
+    delivery_provider = models.ForeignKey(
+        DeliveryProvider, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='commandes',
+    )
+    location_point = models.ForeignKey(
+        LocationPoint, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='commandes', help_text="Destination (quartier choisi par le client).",
+    )
+    driver_phone = models.CharField(max_length=30, blank=True, default='')
+    partner_delivery_ref = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text="Identifiant de la livraison renvoyé par le partenaire.",
+    )
+    partner_delivery_fee = models.FloatField(null=True, blank=True)
+    delivery_final_price = models.FloatField(
+        null=True, blank=True,
+        help_text="partner_delivery_fee + delivery_type.delivery_margin — montant payé par le client.",
+    )
+    delivery_datetime = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Moment de livraison choisi par le client (mes_plats).",
+    )
+    dispatch_status = models.CharField(
+        max_length=20, choices=DISPATCH_STATUS_CHOICES, default='pending',
+    )
+    dispatched_at = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.code:

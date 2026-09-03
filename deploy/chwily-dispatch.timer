@@ -1,0 +1,12 @@
+[Unit]
+Description=Chwily - déclenche chwily-dispatch.service toutes les minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Persistent=true
+Unit=chwily-dispatch.service
+
+[Install]
+WantedBy=timers.target

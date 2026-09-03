@@ -1,0 +1,17 @@
+[Unit]
+Description=Chwily - envoi des commandes de livraison planifiées (mes_plats)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/chwily/backend
+EnvironmentFile=/opt/chwily/backend/.env
+ExecStart=/opt/chwily/venv/bin/python manage.py dispatch_scheduled_orders
+# Évite les exécutions qui se chevauchent si une passe traîne
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

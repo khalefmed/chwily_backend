@@ -1,5 +1,8 @@
 from rest_framework import serializers
-from .models import Poster, User, Category, Commande, ItemCommande
+from .models import (
+    Poster, User, Category, Commande, ItemCommande,
+    LocationPoint, DeliveryType, DeliveryProvider,
+)
 
 class LoginSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
@@ -39,6 +42,18 @@ class CategoryDetailSerializer(serializers.ModelSerializer):
         fields = ['id', 'name_fr', 'image', 'name_ar', 'price1', 'price2', 'price3', 'livraison', 'is_big_steak', 'type', 'type_class']
 
 
+class LocationPointSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LocationPoint
+        fields = ['id', 'name', 'name_ar', 'lat', 'lng']
+
+
+class DeliveryTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryType
+        fields = ['code', 'name_fr', 'name_ar', 'delivery_margin', 'is_scheduled']
+
+
 class UserDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -66,7 +81,14 @@ class CommandeSerializer(serializers.ModelSerializer):
         model = Commande
         fields = [
             'id', 'title', 'code', 'prix', 'date', 'status', 'location', 'livraison', 'capture', 'avec_6begat',
-            'phone', 'user', 'items'
+            'phone', 'user', 'items',
+            'delivery_type', 'delivery_provider', 'location_point', 'driver_phone',
+            'partner_delivery_ref', 'partner_delivery_fee', 'delivery_final_price',
+            'delivery_datetime', 'dispatch_status', 'dispatched_at',
+        ]
+        read_only_fields = [
+            'delivery_type', 'delivery_provider', 'driver_phone', 'partner_delivery_ref',
+            'partner_delivery_fee', 'delivery_final_price', 'dispatch_status', 'dispatched_at',
         ]
 
     def create(self, validated_data):

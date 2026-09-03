@@ -6,12 +6,18 @@ from rest_framework import viewsets, generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
+from django.db.models import Q
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken,  TokenError
 from django.contrib.auth import authenticate
-from .models import AppConfiguration, User, Category, Commande, ItemCommande
+from .models import (
+    AppConfiguration, User, Category, Commande, ItemCommande,
+    DeliveryProvider, DeliveryType, LocationPoint,
+)
 from .serializers import *
 from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_datetime
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -21,6 +27,14 @@ from firebase_admin import messaging
 from .firebase_init import *
 from firebase_admin._messaging_utils import UnregisteredError
 import logging.config
+
+from .services.notifications import send_notification, send_notifications_to_admins
+from .services.delivery import (
+    dispatch_commande, resolve_delivery_type, quote_delivery, apply_partner_status,
+)
+from .services.jemli import DeliveryPartnerError
+
+logger = logging.getLogger(__name__)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -222,6 +236,13 @@ class AddCommandeView(APIView):
             'title': request.data.get('title'),
         }
 
+        # Livraison partenaire (optionnel : renseigné par l'app pour les
+        # types sbou7 / poisson / l7am / mes_plats).
+        if request.data.get('location_point'):
+            commande_data['location_point'] = request.data.get('location_point')
+        if request.data.get('delivery_datetime'):
+            commande_data['delivery_datetime'] = request.data.get('delivery_datetime')
+
         if 'capture' in request.FILES:
             commande_data['capture'] = request.FILES['capture']
 
@@ -245,7 +266,26 @@ class AddCommandeView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             item_serializer.save()
-        
+
+        # Résolution du type de livraison partenaire + prix (best-effort,
+        # non bloquant). Le prix vient du devis fait par l'app au checkout.
+        try:
+            delivery_type = resolve_delivery_type(commande)
+            if delivery_type is not None:
+                commande.delivery_type = delivery_type
+                commande.delivery_provider = delivery_type.provider
+                fee = request.data.get('partner_delivery_fee')
+                final = request.data.get('delivery_final_price')
+                if fee not in (None, ''):
+                    commande.partner_delivery_fee = float(fee)
+                if final not in (None, ''):
+                    commande.delivery_final_price = float(final)
+                commande.save(update_fields=[
+                    'delivery_type', 'delivery_provider',
+                    'partner_delivery_fee', 'delivery_final_price',
+                ])
+        except Exception:
+            logger.exception('Résolution livraison partenaire échouée pour %s', commande.code)
 
         user = request.user
 
@@ -296,28 +336,44 @@ class MeView(APIView):
 
 
 
-class PendingCommandesView(APIView):
+class CommandesByStatusPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class CommandesByStatusView(APIView):
     permission_classes = [IsAuthenticated]
+    pagination_class = CommandesByStatusPagination
 
-    def get(self, request):
-        paid = Commande.objects.filter(status='paid')
-        loading = Commande.objects.filter(status='loading')
-        return Response({
-            "paid": CommandeSerializer(paid, many=True).data,
-            "loading": CommandeSerializer(loading, many=True).data
-        })
-    
+    def get(self, request, status_value):
+        if getattr(request.user, 'type', None) not in ['admin', 'super_admin']:
+            return Response({'detail': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
 
-class PendingCommandesView2(APIView):
-    permission_classes = [IsAuthenticated]
+        valid_statuses = dict(Commande.STATUS_CHOICES)
+        if status_value not in valid_statuses:
+            return Response(
+                {'detail': f"Invalid status. Must be one of: {', '.join(valid_statuses)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-    def get(self, request):
-        waiting = Commande.objects.filter(status='waiting')
-        rejected = Commande.objects.filter(status='rejected')
-        return Response({
-            "waiting": CommandeSerializer(waiting, many=True).data,
-            "rejected": CommandeSerializer(rejected, many=True).data
-        })
+        commandes = Commande.objects.filter(status=status_value) \
+            .select_related('user') \
+            .prefetch_related('items__category') \
+            .order_by('-date')
+
+        search = request.query_params.get('search')
+        if search:
+            commandes = commandes.filter(
+                Q(phone__icontains=search) |
+                Q(user__phone__icontains=search) |
+                Q(code__icontains=search)
+            )
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(commandes, request)
+        serializer = CommandeSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
     
 
 
@@ -362,22 +418,35 @@ class ChangeCommandeStatusView(APIView):
 
     def post(self, request, pk):
         new_status = request.data.get('status')
-        if new_status not in ['waiting', 'paid', 'loading', 'delivered', 'rejected']:
+        if new_status not in ['waiting', 'paid', 'looking_for_driver', 'driver_assigned', 'loading', 'delivered', 'rejected']:
             return Response({'detail': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
 
         commande = get_object_or_404(Commande, pk=pk)
         commande.status = new_status
-        commande.save()
+        commande.save(update_fields=['status'])
 
-        print(request.user.fcm_token)
-        user = request.user
+        # Au passage à "payé" : envoi (ou planification) vers le partenaire de
+        # livraison. dispatch_commande peut faire évoluer le statut lui-même
+        # (et notifie alors le client de son côté).
+        dispatch_changed = False
+        if new_status == 'paid':
+            try:
+                dispatch_commande(commande)
+                dispatch_changed = commande.status != 'paid'
+            except Exception:
+                logger.exception('dispatch_commande a échoué pour %s', commande.code)
 
+        if dispatch_changed:
+            return Response({'detail': 'Status updated successfully', 'commande': CommandeSerializer(commande).data})
 
+        user = commande.user
 
         statuses = {
             'ar': {
                 'waiting': 'قيد الانتظار',
                 'paid': 'مدفوع',
+                'looking_for_driver': 'جاري البحث عن موصّل',
+                'driver_assigned': 'تم تعيين موصّل',
                 'loading': 'قيد المعالجة',
                 'delivered': 'تم التوصيل',
                 'rejected': 'مرفوض',
@@ -385,6 +454,8 @@ class ChangeCommandeStatusView(APIView):
             'fr' : {
                 'waiting' : 'en attente',
                 'paid' : 'paye',
+                'looking_for_driver' : "recherche d'un livreur",
+                'driver_assigned' : 'livreur assigne',
                 'loading' : 'en cours',
                 'delivered' : 'livre',
                 'rejected' : 'rejecte',
@@ -406,11 +477,97 @@ class ChangeCommandeStatusView(APIView):
                 commande.user.fcm_token
             )
         return Response({'detail': 'Status updated successfully', 'commande': CommandeSerializer(commande).data})
-    
 
 
+class LocationPointListView(generics.ListAPIView):
+    """Quartiers pré-connus (avec coordonnées) proposés au client au checkout."""
+    permission_classes = [AllowAny]
+    serializer_class = LocationPointSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return LocationPoint.objects.filter(is_active=True).order_by('name')
 
 
+class DeliveryQuoteView(APIView):
+    """Devis de livraison partenaire, appelé au checkout avant le paiement.
+
+    Body : { "location_point": <id>, "delivery_type": "<code>",
+             "delivery_datetime": "<iso, optionnel>" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        lp_id = request.data.get('location_point')
+        type_code = request.data.get('delivery_type')
+        when_raw = request.data.get('delivery_datetime')
+
+        if not lp_id or not type_code:
+            return Response(
+                {'detail': 'location_point et delivery_type sont requis.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        destination = get_object_or_404(LocationPoint, pk=lp_id, is_active=True)
+        delivery_type = get_object_or_404(DeliveryType, code=type_code, is_active=True)
+        if delivery_type.provider is None:
+            return Response(
+                {'detail': "Ce type d'article ne passe pas par un partenaire de livraison."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        when = parse_datetime(when_raw) if when_raw else None
+
+        try:
+            quote = quote_delivery(delivery_type, destination, when)
+        except DeliveryPartnerError as exc:
+            logger.warning('Devis JEMLI indisponible : %s', exc)
+            return Response({'detail': f'Devis indisponible : {exc}'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        quote.pop('raw', None)
+        return Response(quote)
+
+
+class DeliveryWebhookView(APIView):
+    """Reçoit les mises à jour de statut d'un partenaire de livraison.
+
+    URL  : /api/delivery/webhook/<provider_code>/
+    Auth : en-tête `X-Webhook-Secret` (ou `?secret=`) == provider.webhook_secret
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, provider_code):
+        provider = get_object_or_404(DeliveryProvider, code=provider_code, is_active=True)
+
+        secret = request.headers.get('X-Webhook-Secret') or request.query_params.get('secret')
+        if not provider.webhook_secret or secret != provider.webhook_secret:
+            return Response({'detail': 'Invalid webhook secret.'}, status=status.HTTP_403_FORBIDDEN)
+
+        data = request.data or {}
+        # TODO(jemli-doc) : ajuster les clés au vrai payload webhook JEMLI.
+        ref = str(
+            data.get('delivery_id') or data.get('id') or data.get('reference') or ''
+        ).strip()
+        external_status = data.get('status') or data.get('state')
+        driver = data.get('driver')
+        if isinstance(driver, dict):
+            driver_phone = driver.get('phone') or driver.get('phone_number')
+        else:
+            driver_phone = data.get('driver_phone')
+
+        if not ref:
+            return Response({'detail': 'delivery_id manquant.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        commande = Commande.objects.filter(
+            partner_delivery_ref=ref, delivery_provider=provider,
+        ).first()
+        if commande is None:
+            return Response({'detail': 'Commande introuvable pour cette référence.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        changed = apply_partner_status(commande, external_status, driver_phone)
+        return Response({'detail': 'ok', 'status': commande.status, 'changed': changed})
 
 
 class ToggleUserTypeView(APIView):
@@ -605,58 +762,7 @@ def test_notification(request):
 
 
 
-def send_notification(title, body, token):
-    print(token)
-
-    if not token:
-        return
-
-    message = messaging.Message(
-        notification=messaging.Notification(
-            title=title,
-            body=body,
-        ),
-        token=token,
-    )
-
-    try:
-        response = messaging.send(message)
-        print("✅ Notification envoyée avec ID:", response)
-
-    except UnregisteredError:
-        pass
-
-    except Exception:
-        pass
-
-
-def send_notifications_to_admins(title, body):
-    admins = User.objects.filter(type__in=['admin', 'super_admin'])
-
-    for admin in admins:
-        token = admin.fcm_token
-
-        if not token:
-            continue  
-
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body,
-            ),
-            token=token,
-        )
-
-        try:
-            response = messaging.send(message)
-            print("Message envoyé avec ID:", response)
-
-        except UnregisteredError:
-            pass
-
-        except Exception:
-            pass
-
+# send_notification / send_notifications_to_admins : voir api/services/notifications.py
 
 
 class LogoutView(APIView):
