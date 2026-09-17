@@ -113,78 +113,19 @@ class LoginView(TokenObtainPairView):
         return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
 
-class GuewdaCategoryView(APIView):
+class CategoryByTypeView(APIView):
+    """Catégories pour un `type` donné (guewda, sayra, mechwi, poisson,
+    mes_plats, sbou7, l7am, ou tout nouveau type créé côté admin).
+
+    Remplace les 5 vues quasi identiques qui existaient avant (une par
+    type) — même comportement (-5% pour les traiteurs), un seul endroit
+    à maintenir, et les nouveaux types (sbou7/l7am) sont servis sans
+    code supplémentaire.
+    """
     permission_classes = [AllowAny]
-    def get(self, request):
-        categories = Category.objects.filter(type='guewda').order_by('order')
-        serializer = CategorySerializer(categories, many=True)
-        data = serializer.data
 
-        if request.user.is_authenticated:
-            if getattr(request.user, 'type', None) == 'traitor':
-                for item in data:
-                    item['price1'] = round(item['price1'] * 0.95, 2)
-                    item['price2'] = round(item['price2'] * 0.95, 2)
-                    item['price3'] = round(item['price3'] * 0.95, 2)
-        return Response(data)
-
-
-class SayraCategoryView(APIView):
-    permission_classes = [AllowAny]
-    def get(self, request):
-        categories = Category.objects.filter(type='sayra').order_by('order')
-        serializer = CategorySerializer(categories, many=True)
-        data = serializer.data
-
-        if request.user.is_authenticated:
-            if getattr(request.user, 'type', None) == 'traitor':
-                for item in data:
-                    item['price1'] = round(item['price1'] * 0.95, 2)
-                    item['price2'] = round(item['price2'] * 0.95, 2)
-                    item['price3'] = round(item['price3'] * 0.95, 2)
-
-        return Response(data)
-
-
-class MechwiCategoryView(APIView):
-    permission_classes = [AllowAny]
-    def get(self, request):
-        categories = Category.objects.filter(type='mechwi').order_by('order')
-        serializer = CategorySerializer(categories, many=True)
-        data = serializer.data
-
-        if request.user.is_authenticated:
-            if getattr(request.user, 'type', None) == 'traitor':
-                for item in data:
-                    item['price1'] = round(item['price1'] * 0.95, 2)
-                    item['price2'] = round(item['price2'] * 0.95, 2)
-                    item['price3'] = round(item['price3'] * 0.95, 2)
-
-        return Response(data)
-    
-
-class PoissonCategoryView(APIView):
-    permission_classes = [AllowAny]
-    def get(self, request):
-        categories = Category.objects.filter(type='poisson').order_by('order')
-        serializer = CategorySerializer(categories, many=True)
-        data = serializer.data
-
-        if request.user.is_authenticated:
-            if getattr(request.user, 'type', None) == 'traitor':
-                for item in data:
-                    item['price1'] = round(item['price1'] * 0.95, 2)
-                    item['price2'] = round(item['price2'] * 0.95, 2)
-                    item['price3'] = round(item['price3'] * 0.95, 2)
-
-        return Response(data)
-
-
-
-class MesPlatsCategoryView(APIView):
-    permission_classes = [AllowAny]
-    def get(self, request):
-        categories = Category.objects.filter(type='mes_plats').order_by('order')
+    def get(self, request, type):
+        categories = Category.objects.filter(type=type).order_by('order')
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 

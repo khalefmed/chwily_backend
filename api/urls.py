@@ -18,11 +18,7 @@ urlpatterns = [
     path('me/delete/', DeleteAccountView.as_view(), name='delete-account'),
     path('reset-password/', reset_password, name='reset_password'),
 
-    path('category/guewda/', GuewdaCategoryView.as_view(), name='category-guewda'),
-    path('category/sayra/', SayraCategoryView.as_view(), name='category-sayra'),
-    path('category/mechwi/', MechwiCategoryView.as_view(), name='category-mechwi'),
-    path('category/poisson/', PoissonCategoryView.as_view(), name='category-poisson'),
-    path('category/mes_plats/', MesPlatsCategoryView.as_view(), name='category-mes_plats'),
+    path('category/<str:type>/', CategoryByTypeView.as_view(), name='category-by-type'),
 
     path('mes_commandes/', MesCommandesView.as_view(), name='mes-commandes'),
     path('commandes/add/', AddCommandeView.as_view(), name='add-commande'),
