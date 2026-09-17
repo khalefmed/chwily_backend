@@ -92,13 +92,13 @@ def resolve_delivery_type(commande):
     return types[0]
 
 
-def quote_delivery(delivery_type, destination, when=None):
+def quote_delivery(delivery_type, destination):
     """Renvoie {partner_delivery_fee, delivery_margin, delivery_final_price, raw}."""
     provider = delivery_type.provider
     if provider is None or provider.origin_point is None:
         raise DeliveryPartnerError('Provider ou point de départ non configuré.')
 
-    payload = client_for(provider).compute_pricing(provider.origin_point, destination, when)
+    payload = client_for(provider).compute_pricing(provider.origin_point, destination)
     fee = extract_price(payload)
     margin = delivery_type.delivery_margin or 0
     return {

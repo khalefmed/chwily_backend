@@ -108,7 +108,10 @@ class DeliveryProvider(models.Model):
     point de départ isolé (cuisine ou boutique partenaire)."""
     name = models.CharField(max_length=100, unique=True)
     code = models.SlugField(max_length=50, unique=True)
-    base_url = models.URLField(default='https://api-jemli.oneposts.io/api/third-party/')
+    # NB : le segment final (ex. "28/08/2026") ressemble à une date mais n'en
+    # est pas une — c'est un identifiant de route fixe propre au compte
+    # partenaire (confirmé empiriquement, voir api/services/jemli.py).
+    base_url = models.URLField(default='https://api-jemli.oneposts.io/api/third-party/28/08/2026/')
     api_key = models.CharField(max_length=255, blank=True, default='')
     api_secret = models.CharField(max_length=255, blank=True, default='')
     origin_point = models.ForeignKey(

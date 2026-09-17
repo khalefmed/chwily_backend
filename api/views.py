@@ -17,7 +17,6 @@ from .models import (
 )
 from .serializers import *
 from django.shortcuts import get_object_or_404
-from django.utils.dateparse import parse_datetime
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -492,15 +491,13 @@ class LocationPointListView(generics.ListAPIView):
 class DeliveryQuoteView(APIView):
     """Devis de livraison partenaire, appelé au checkout avant le paiement.
 
-    Body : { "location_point": <id>, "delivery_type": "<code>",
-             "delivery_datetime": "<iso, optionnel>" }
+    Body : { "location_point": <id>, "delivery_type": "<code>" }
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         lp_id = request.data.get('location_point')
         type_code = request.data.get('delivery_type')
-        when_raw = request.data.get('delivery_datetime')
 
         if not lp_id or not type_code:
             return Response(
@@ -516,10 +513,8 @@ class DeliveryQuoteView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        when = parse_datetime(when_raw) if when_raw else None
-
         try:
-            quote = quote_delivery(delivery_type, destination, when)
+            quote = quote_delivery(delivery_type, destination)
         except DeliveryPartnerError as exc:
             logger.warning('Devis JEMLI indisponible : %s', exc)
             return Response({'detail': f'Devis indisponible : {exc}'}, status=status.HTTP_502_BAD_GATEWAY)

@@ -1,17 +1,27 @@
 """Client HTTP pour l'API du partenaire de livraison JEMLI.
 
-Base : https://api-jemli.oneposts.io/api/third-party/
-Auth : en-têtes X-Api-Key / X-Api-Secret
-Les endpoints portent la date de livraison dans l'URL : /DD/MM/YYYY/...
+Auth : en-têtes X-Api-Key / X-Api-Secret.
 
-⚠️  Le format exact des corps / réponses (au-delà de ce que montrent les
-exemples curl fournis) reste à confirmer avec la doc JEMLI. Les endroits
-concernés sont marqués « TODO(jemli-doc) ».
+⚠️ Le segment `28/08/2026` dans l'URL type ressemble à une date mais n'EN
+EST PAS UNE : testé empiriquement le 2026-09-17 contre l'API réelle, toutes
+les autres dates (y compris le jour même) renvoient 404 — seul ce segment
+fixe fonctionne. C'est un identifiant de route propre à notre compte
+partenaire, fourni par JEMLI. Il fait donc partie de `DeliveryProvider.base_url`
+(ex. `https://api-jemli.oneposts.io/api/third-party/28/08/2026/`) et n'est
+PAS recalculé par ce client.
+
+Confirmé (compute-pricing, requête réelle) :
+    -> {"price": 0.0, "delivery_fee": 100.0, "distance_km": 4.13,
+        "origin_title": "...", "destination_title": "...", "is_prepaid": true}
+    "delivery_fee" est le tarif de livraison à utiliser (pas "price").
+
+⚠️ Le corps/la réponse de `deliveries/` (création) restent non vérifiés —
+volontairement pas testés en conditions réelles pour ne pas déclencher une
+vraie livraison. Marqué TODO(jemli-doc).
 """
 import logging
 
 import requests
-from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -35,14 +45,8 @@ class JemliClient:
         }
 
     def _base(self):
+        # provider.base_url contient déjà le segment de route JEMLI (ex. .../28/08/2026/).
         return self.provider.base_url.rstrip('/')
-
-    @staticmethod
-    def _date_segment(when=None):
-        when = when or timezone.localtime()
-        if timezone.is_aware(when):
-            when = timezone.localtime(when)
-        return when.strftime('%d/%m/%Y')
 
     @staticmethod
     def _point(location_point):
@@ -67,21 +71,21 @@ class JemliClient:
             return {}
 
     # -- API ----------------------------------------------------------
-    def compute_pricing(self, origin, destination, when=None):
-        url = f'{self._base()}/{self._date_segment(when)}/compute-pricing/'
+    def compute_pricing(self, origin, destination):
+        url = f'{self._base()}/compute-pricing/'
         return self._request('POST', url, json={
             'origin': self._point(origin),
             'destination': self._point(destination),
         })
 
-    def create_delivery(self, commande, when=None):
+    def create_delivery(self, commande):
         origin = commande.delivery_provider.origin_point
         destination = commande.location_point
         if origin is None or destination is None:
             raise DeliveryPartnerError('Point de départ ou destination manquant.')
 
-        # TODO(jemli-doc) : compléter le corps (nom / téléphone du
-        # destinataire, référence, créneau, contenu…) une fois la doc reçue.
+        # TODO(jemli-doc) : corps non vérifié en conditions réelles (voir
+        # docstring du module) — compléter/corriger une fois testé.
         payload = {
             'origin': self._point(origin),
             'destination': self._point(destination),
@@ -92,19 +96,19 @@ class JemliClient:
         if commande.delivery_datetime:
             payload['scheduled_at'] = commande.delivery_datetime.isoformat()
 
-        segment_date = when or commande.delivery_datetime
-        url = f'{self._base()}/{self._date_segment(segment_date)}/deliveries/'
+        url = f'{self._base()}/deliveries/'
         return self._request('POST', url, json=payload)
 
-    def get_delivery(self, ref, when=None):
-        url = f'{self._base()}/{self._date_segment(when)}/deliveries/{ref}/'
+    def get_delivery(self, ref):
+        url = f'{self._base()}/deliveries/{ref}/'
         return self._request('GET', url)
 
 
-# --- Extraction défensive de valeurs depuis des réponses au schéma
-#     encore non confirmé. TODO(jemli-doc) : figer les clés. ----------
+# --- Extraction de valeurs depuis les réponses JEMLI. ------------------
+# `delivery_fee` est confirmé (voir docstring). Le reste garde un
+# repli défensif tant que `deliveries/` n'est pas vérifié.
 
-_PRICE_KEYS = ('price', 'amount', 'total', 'fee', 'cost', 'delivery_fee', 'pricing', 'total_price')
+_PRICE_KEYS = ('delivery_fee', 'price', 'amount', 'total', 'fee', 'cost', 'pricing', 'total_price')
 _REF_KEYS = ('id', 'delivery_id', 'reference', 'ref', 'tracking_id', 'uuid')
 _WRAPPERS = ('data', 'result', 'results', 'delivery', 'pricing', 'payload')
 
