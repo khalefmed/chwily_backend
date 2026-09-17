@@ -2,7 +2,9 @@
 devis, envoi immédiat ou planifié, application des statuts partenaire.
 """
 import logging
+import uuid
 
+from django.conf import settings
 from django.utils import timezone
 
 from ..models import DeliveryType
@@ -138,20 +140,33 @@ def dispatch_commande(commande, force=False):
 
 def send_to_partner(commande):
     """Envoi effectif de la commande au partenaire (immédiat ou déclenché
-    par le planificateur)."""
+    par le planificateur).
+
+    En mode sandbox (settings.DELIVERY_SANDBOX), la création réelle chez le
+    partenaire est simulée : dev et prod partagent pour l'instant les mêmes
+    identifiants JEMLI, donc appeler la vraie API depuis un environnement de
+    test enverrait un chauffeur réel.
+    """
     provider = commande.delivery_provider
-    try:
-        response = client_for(provider).create_delivery(commande)
-        ref = extract_delivery_ref(response)
-    except DeliveryPartnerError as exc:
-        commande.dispatch_status = 'failed'
-        commande.save(update_fields=['delivery_type', 'delivery_provider', 'dispatch_status'])
-        logger.error('Dispatch commande %s échoué : %s', commande.code, exc)
-        send_notifications_to_admins(
-            'Échec envoi livraison',
-            f"La commande {commande.code} n'a pas pu être envoyée à {provider.name}.",
+    if settings.DELIVERY_SANDBOX:
+        ref = f'SANDBOX-{uuid.uuid4().hex[:10]}'
+        logger.warning(
+            '[SANDBOX] Dispatch simulé pour %s vers %s (aucun appel JEMLI réel, ref=%s)',
+            commande.code, provider.name, ref,
         )
-        return False
+    else:
+        try:
+            response = client_for(provider).create_delivery(commande)
+            ref = extract_delivery_ref(response)
+        except DeliveryPartnerError as exc:
+            commande.dispatch_status = 'failed'
+            commande.save(update_fields=['delivery_type', 'delivery_provider', 'dispatch_status'])
+            logger.error('Dispatch commande %s échoué : %s', commande.code, exc)
+            send_notifications_to_admins(
+                'Échec envoi livraison',
+                f"La commande {commande.code} n'a pas pu être envoyée à {provider.name}.",
+            )
+            return False
 
     commande.partner_delivery_ref = ref
     commande.dispatch_status = 'sent'

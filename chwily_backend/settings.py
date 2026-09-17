@@ -177,3 +177,11 @@ CSRF_TRUSTED_ORIGINS = [
 
 # nginx termine le TLS : faire confiance à l'en-tête X-Forwarded-Proto.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# En sandbox, on N'appelle PAS deliveries/ (création réelle chez le partenaire
+# de livraison) — on simule un succès. compute-pricing reste appelé normalement
+# (lecture seule). À activer sur l'environnement dev : dev et prod partagent
+# pour l'instant les mêmes identifiants JEMLI (un seul jeu de clés fourni), donc
+# sans ce garde-fou, faire passer une commande de test à "paid" en dev
+# déclencherait une VRAIE livraison chez JEMLI (un chauffeur réel serait envoyé).
+DELIVERY_SANDBOX = config('DELIVERY_SANDBOX', default=False, cast=bool)
