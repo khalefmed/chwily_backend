@@ -18,9 +18,13 @@ from .notifications import send_notification, send_notifications_to_admins
 
 logger = logging.getLogger(__name__)
 
-# Correspondance statut partenaire -> statut Commande.
-# TODO(jemli-doc) : compléter / corriger avec les vrais libellés JEMLI.
+# Correspondance `status.code` JEMLI -> statut Commande.
+# Seul `customer_cancelled` est un code réel observé ; les autres sont devinés.
+# TODO(jemli-doc) : remplacer par la liste réelle (docs/jemli-api.md).
 JEMLI_STATUS_MAP = {
+    'customer_cancelled': 'rejected',
+    'vendor_cancelled': 'rejected',
+    'driver_cancelled': 'rejected',
     'pending': 'looking_for_driver',
     'searching': 'looking_for_driver',
     'looking_for_driver': 'looking_for_driver',
@@ -156,7 +160,13 @@ def send_to_partner(commande):
         )
     else:
         try:
-            response = client_for(provider).create_delivery(commande)
+            client = client_for(provider)
+            delivery_type = commande.delivery_type
+            if delivery_type is not None and delivery_type.catalog_category:
+                # Plats du catalogue partenaire : le restaurant prépare et livre.
+                response = client.create_order(commande, delivery_type.catalog_category)
+            else:
+                response = client.create_delivery(commande)
             ref = extract_delivery_ref(response)
         except DeliveryPartnerError as exc:
             commande.dispatch_status = 'failed'
@@ -197,6 +207,10 @@ def notify_client_status(commande, new_status):
 def apply_partner_status(commande, external_status, driver_phone=None):
     """Applique un statut reçu du partenaire (webhook / polling).
     Retourne le nouveau statut Commande, ou None si inchangé."""
+    # JEMLI renvoie un objet {"code", "name", "name_ar", "color"} ; une
+    # chaîne simple reste acceptée.
+    if isinstance(external_status, dict):
+        external_status = external_status.get('code')
     mapped = JEMLI_STATUS_MAP.get(str(external_status or '').lower().strip())
     fields = []
 

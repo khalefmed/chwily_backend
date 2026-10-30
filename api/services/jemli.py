@@ -13,9 +13,10 @@ Confirmé (compute-pricing, requête réelle) :
         "origin_title": "...", "destination_title": "...", "is_prepaid": true}
     "delivery_fee" est le tarif de livraison à utiliser (pas "price").
 
-⚠️ Le corps/la réponse de `deliveries/` (création) restent non vérifiés —
-volontairement pas testés en conditions réelles pour ne pas déclencher une
-vraie livraison. Marqué TODO(jemli-doc).
+Référence complète (routes, formats, niveau de confiance) : docs/jemli-api.md.
+Les corps de `deliveries/` et `orders/` suivent la description de JEMLI, mais
+leurs réponses n'ont jamais été observées (appels réels = vrai livreur / vrai
+restaurant). Marqué TODO(jemli-doc).
 """
 import logging
 
@@ -76,26 +77,64 @@ class JemliClient:
             'destination': self._point(destination),
         })
 
+    @staticmethod
+    def _reference(commande):
+        # Seul champ libre transmis au livreur : notre code + le téléphone du
+        # destinataire (deliveries/ n'a pas de champ téléphone).
+        return f'Chwily {commande.code} - {commande.phone}'
+
     def create_delivery(self, commande):
+        """Course seule (sbou7 / poisson / l7am) — corps décrit par JEMLI
+        (OPTIONS deliveries/), réponse jamais observée : voir docs/jemli-api.md."""
         origin = commande.delivery_provider.origin_point
         destination = commande.destination
         if origin is None or destination is None:
             raise DeliveryPartnerError('Point de départ ou destination manquant.')
 
-        # TODO(jemli-doc) : corps non vérifié en conditions réelles (voir
-        # docstring du module) — compléter/corriger une fois testé.
         payload = {
             'origin': self._point(origin),
             'destination': self._point(destination),
-            'reference': commande.code,
-            'recipient_phone': commande.phone,
-            'recipient_name': commande.title or '',
+            'custom_description': self._reference(commande),
+            'origin_title': origin.name,
         }
-        if commande.delivery_datetime:
-            payload['scheduled_at'] = commande.delivery_datetime.isoformat()
+        if commande.location_point is not None:
+            payload['destination_title'] = commande.location_point.name
 
         url = f'{self._base()}/deliveries/'
         return self._request('POST', url, json=payload)
+
+    def create_order(self, commande, category):
+        """Commande restaurant (plats + livraison depuis le vendeur), pour les
+        types alimentés par le catalogue (mes_plats -> restaurant).
+        Corps décrit par JEMLI (OPTIONS orders/), réponse jamais observée."""
+        destination = commande.destination
+        if destination is None:
+            raise DeliveryPartnerError('Destination manquante.')
+
+        items = []
+        for item in commande.items.select_related('category'):
+            if not item.category.external_id:
+                raise DeliveryPartnerError(
+                    f'Article « {item.category.name_fr} » absent du catalogue partenaire.'
+                )
+            items.append({'product_id': int(item.category.external_id), 'quantity': item.number})
+        if not items:
+            raise DeliveryPartnerError('Commande sans article.')
+
+        user = commande.user
+        reference = self._reference(commande)
+        payload = {
+            'phone': commande.phone,
+            'full_name': user.get_full_name() or commande.title or '',
+            'destination': self._point(destination),
+            'items': items,
+            # La docstring JEMLI dit customer_description, leur exemple
+            # custom_description : on envoie les deux tant que ce n'est pas tranché.
+            'customer_description': reference,
+            'custom_description': reference,
+        }
+        url = f'{self._base()}/orders/'
+        return self._request('POST', url, params={'category': category}, json=payload)
 
     def get_delivery(self, ref):
         url = f'{self._base()}/deliveries/{ref}/'
@@ -120,7 +159,7 @@ class JemliClient:
 
 _PRICE_KEYS = ('delivery_fee', 'price', 'amount', 'total', 'fee', 'cost', 'pricing', 'total_price')
 _REF_KEYS = ('id', 'delivery_id', 'reference', 'ref', 'tracking_id', 'uuid')
-_WRAPPERS = ('data', 'result', 'results', 'delivery', 'pricing', 'payload')
+_WRAPPERS = ('data', 'result', 'results', 'delivery', 'order', 'pricing', 'payload')
 
 
 def _dig(payload, keys):
