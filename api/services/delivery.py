@@ -18,22 +18,20 @@ from .notifications import send_notification, send_notifications_to_admins
 
 logger = logging.getLogger(__name__)
 
-# Correspondance `status.code` JEMLI -> statut Commande.
-# Codes réels (fournis par JEMLI / observés) : voir docs/jemli-api.md.
-# Un code absent de la table ne change pas le statut de la commande.
+# Statuts de livraison communs Chwily / JEMLI, reçus par le callback
+# (DeliveryWebhookView, contrat dans docs/jemli-callback.md) ou lus dans
+# `status.code` des réponses JEMLI -> statut Commande.
 JEMLI_STATUS_MAP = {
     'driver_assigned': 'driver_assigned',
     # Livreur au restaurant / point de départ : la commande est « en cours ».
     'driver_arrived_to_pickup_point': 'loading',
     'driver_arrived_to_drop_point': 'loading',
     'delivered': 'delivered',
-    'customer_cancelled': 'rejected',
-    # TODO(jemli-doc) : codes devinés, à remplacer par la liste complète.
-    'vendor_cancelled': 'rejected',
-    'driver_cancelled': 'rejected',
-    'cancelled': 'rejected',
-    'canceled': 'rejected',
 }
+# Annulation de la livraison côté JEMLI : la commande garde son statut, les
+# admins sont prévenus pour réagir (ce n'est pas un rejet de la commande).
+JEMLI_CANCEL_CODES = {'cancelled', 'customer_cancelled'}
+CALLBACK_STATUSES = set(JEMLI_STATUS_MAP) | {'cancelled'}
 
 # Libellés notifiés au client, par langue.
 _STATUS_LABELS = {
@@ -198,13 +196,13 @@ def notify_client_status(commande, new_status):
 
 
 def apply_partner_status(commande, external_status, driver_phone=None):
-    """Applique un statut reçu du partenaire (webhook / polling).
+    """Applique un statut de livraison reçu du partenaire (callback / suivi).
     Retourne le nouveau statut Commande, ou None si inchangé."""
     # JEMLI renvoie un objet {"code", "name", "name_ar", "color"} ; une
     # chaîne simple reste acceptée.
     if isinstance(external_status, dict):
         external_status = external_status.get('code')
-    mapped = JEMLI_STATUS_MAP.get(str(external_status or '').lower().strip())
+    code = str(external_status or '').lower().strip()
     fields = []
 
     if driver_phone and driver_phone != commande.driver_phone:
@@ -212,12 +210,21 @@ def apply_partner_status(commande, external_status, driver_phone=None):
         fields.append('driver_phone')
 
     changed = None
-    if mapped and mapped != commande.status:
-        commande.status = mapped
-        fields.append('status')
-        if mapped == 'delivered':
-            commande.dispatch_status = 'sent'
-        changed = mapped
+    if code in JEMLI_CANCEL_CODES:
+        if commande.dispatch_status != 'cancelled':
+            commande.dispatch_status = 'cancelled'
+            fields.append('dispatch_status')
+            send_notifications_to_admins(
+                'Livraison annulée',
+                f'{commande.delivery_provider} a annulé la livraison de la commande {commande.code}.',
+            )
+    else:
+        mapped = JEMLI_STATUS_MAP.get(code)
+        # Une commande livrée ne revient pas en arrière (callbacks en retard).
+        if mapped and mapped != commande.status and commande.status != 'delivered':
+            commande.status = mapped
+            fields.append('status')
+            changed = mapped
 
     if fields:
         commande.save(update_fields=fields)

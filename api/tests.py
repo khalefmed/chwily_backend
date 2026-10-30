@@ -175,5 +175,62 @@ class PartnerDispatchTests(TestCase):
 
     def test_status_object_is_mapped(self, request, notify):
         from api.services.delivery import apply_partner_status
-        changed = apply_partner_status(self.commande, {'code': 'customer_cancelled', 'name': '...'})
-        self.assertEqual(changed, 'rejected')
+        changed = apply_partner_status(self.commande, {'code': 'driver_assigned', 'name': '...'})
+        self.assertEqual(changed, 'driver_assigned')
+
+
+@mock.patch('api.services.delivery.send_notifications_to_admins')
+@mock.patch('api.services.delivery.notify_client_status')
+class PartnerCallbackTests(TestCase):
+    URL = '/api/delivery/webhook/jemli/'
+
+    def setUp(self):
+        from api.models import Commande, User
+        self.provider = DeliveryProvider.objects.get(code='jemli')
+        user = User.objects.create_user(phone=44444444, password='x')
+        self.commande = Commande.objects.create(
+            prix=1000, location='x', phone='20004200', user=user, status='looking_for_driver',
+            delivery_provider=self.provider, partner_delivery_ref='137253', dispatch_status='sent')
+        self.client = APIClient()
+
+    def _post(self, body, key=None):
+        key = self.provider.webhook_secret if key is None else key
+        return self.client.post(self.URL, body, format='json', HTTP_X_API_KEY=key)
+
+    def test_full_lifecycle(self, notify, notify_admins):
+        expected = [('driver_assigned', 'driver_assigned'),
+                    ('driver_arrived_to_pickup_point', 'loading'),
+                    ('driver_arrived_to_drop_point', 'loading'),
+                    ('delivered', 'delivered')]
+        for code, status in expected:
+            response = self._post({'id': 137253, 'status': code, 'driver': {'name': 'Sidi', 'phone': '22123456'}})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {'ok': True, 'id': '137253', 'status': code})
+            self.commande.refresh_from_db()
+            self.assertEqual(self.commande.status, status)
+        self.assertEqual(self.commande.driver_phone, '22123456')
+
+    def test_delivered_is_final(self, notify, notify_admins):
+        self._post({'id': 137253, 'status': 'delivered'})
+        self._post({'id': 137253, 'status': 'driver_arrived_to_drop_point'})
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'delivered')
+
+    def test_cancelled_keeps_status_and_alerts_admins(self, notify, notify_admins):
+        response = self._post({'id': 137253, 'status': 'cancelled'})
+        self.assertEqual(response.status_code, 200)
+        self.commande.refresh_from_db()
+        self.assertEqual((self.commande.status, self.commande.dispatch_status), ('looking_for_driver', 'cancelled'))
+        notify_admins.assert_called_once()
+        notify.assert_not_called()
+
+    def test_errors(self, notify, notify_admins):
+        cases = [
+            (self._post({'id': 137253, 'status': 'delivered'}, key='bad'), 401, 'invalid_api_key'),
+            (self._post({'status': 'delivered'}), 400, 'missing_fields'),
+            (self._post({'id': 137253, 'status': 'paid'}), 400, 'invalid_status'),
+            (self._post({'id': 999, 'status': 'delivered'}), 404, 'unknown_id'),
+        ]
+        for response, http, error in cases:
+            self.assertEqual(response.status_code, http)
+            self.assertEqual(response.json()['error'], error)

@@ -31,6 +31,7 @@ from .services.notifications import send_notification, send_notifications_to_adm
 from .services.catalog import ensure_catalog_fresh
 from .services.delivery import (
     dispatch_commande, resolve_delivery_type, quote_delivery, apply_partner_status,
+    CALLBACK_STATUSES, JEMLI_CANCEL_CODES,
 )
 from .services.jemli import DeliveryPartnerError
 
@@ -483,45 +484,55 @@ class DeliveryQuoteView(APIView):
 
 
 class DeliveryWebhookView(APIView):
-    """Reçoit les mises à jour de statut d'un partenaire de livraison.
+    """Callback du partenaire de livraison : changement de statut d'une course.
 
-    URL  : /api/delivery/webhook/<provider_code>/
-    Auth : en-tête `X-Webhook-Secret` (ou `?secret=`) == provider.webhook_secret
+    Contrat transmis à JEMLI : docs/jemli-callback.md.
+
+    POST /api/delivery/webhook/<provider_code>/
+    En-tête : X-Api-Key == provider.webhook_secret
+              (X-Webhook-Secret et ?secret= restent acceptés)
+    Body    : {"id": <id JEMLI>, "status": "<code>", "driver": {"name", "phone"}}
     """
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    @staticmethod
+    def _error(code, detail, http_status):
+        return Response({'ok': False, 'error': code, 'detail': detail}, status=http_status)
+
     def post(self, request, provider_code):
-        provider = get_object_or_404(DeliveryProvider, code=provider_code, is_active=True)
+        provider = DeliveryProvider.objects.filter(code=provider_code, is_active=True).first()
+        key = (
+            request.headers.get('X-Api-Key')
+            or request.headers.get('X-Webhook-Secret')
+            or request.query_params.get('secret')
+        )
+        if provider is None or not provider.webhook_secret or key != provider.webhook_secret:
+            return self._error('invalid_api_key', 'X-Api-Key manquant ou invalide.', status.HTTP_401_UNAUTHORIZED)
 
-        secret = request.headers.get('X-Webhook-Secret') or request.query_params.get('secret')
-        if not provider.webhook_secret or secret != provider.webhook_secret:
-            return Response({'detail': 'Invalid webhook secret.'}, status=status.HTTP_403_FORBIDDEN)
+        data = request.data if isinstance(request.data, dict) else {}
+        ref = str(data.get('id') or '').strip()
+        external_status = data.get('status')
+        if isinstance(external_status, dict):
+            external_status = external_status.get('code')
+        code = str(external_status or '').lower().strip()
 
-        data = request.data or {}
-        # TODO(jemli-doc) : ajuster les clés au vrai payload webhook JEMLI.
-        ref = str(
-            data.get('delivery_id') or data.get('id') or data.get('reference') or ''
-        ).strip()
-        external_status = data.get('status') or data.get('state')
-        driver = data.get('driver')
-        if isinstance(driver, dict):
-            driver_phone = driver.get('phone') or driver.get('phone_number')
-        else:
-            driver_phone = data.get('driver_phone')
+        if not ref or not code:
+            return self._error('missing_fields', 'Les champs "id" et "status" sont obligatoires.',
+                               status.HTTP_400_BAD_REQUEST)
+        if code not in CALLBACK_STATUSES and code not in JEMLI_CANCEL_CODES:
+            return self._error('invalid_status',
+                               f'Statut inconnu. Valeurs acceptées : {", ".join(sorted(CALLBACK_STATUSES))}.',
+                               status.HTTP_400_BAD_REQUEST)
 
-        if not ref:
-            return Response({'detail': 'delivery_id manquant.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        commande = Commande.objects.filter(
-            partner_delivery_ref=ref, delivery_provider=provider,
-        ).first()
+        commande = Commande.objects.filter(partner_delivery_ref=ref, delivery_provider=provider).first()
         if commande is None:
-            return Response({'detail': 'Commande introuvable pour cette référence.'},
-                            status=status.HTTP_404_NOT_FOUND)
+            return self._error('unknown_id', f'Aucune commande Chwily pour id={ref}.', status.HTTP_404_NOT_FOUND)
 
-        changed = apply_partner_status(commande, external_status, driver_phone)
-        return Response({'detail': 'ok', 'status': commande.status, 'changed': changed})
+        driver = data.get('driver')
+        driver_phone = str(driver.get('phone') or '').strip() if isinstance(driver, dict) else ''
+        apply_partner_status(commande, code, driver_phone or None)
+        return Response({'ok': True, 'id': ref, 'status': code})
 
 
 class ToggleUserTypeView(APIView):

@@ -179,6 +179,7 @@ class Commande(models.Model):
         ('scheduled', 'Scheduled'),
         ('sent', 'Sent'),
         ('failed', 'Failed'),
+        ('cancelled', 'Cancelled by partner'),
     ]
 
     prix = models.FloatField()
