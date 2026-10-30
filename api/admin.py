@@ -1,10 +1,16 @@
 from django.contrib import admin
 from api.models import *
 
-admin.site.register(Category)
 admin.site.register(User)
 admin.site.register(ItemCommande)
 admin.site.register(Poster)
+
+
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ('name_fr', 'type', 'price1', 'order', 'is_active', 'external_id')
+    list_filter = ('type', 'is_active')
+    search_fields = ('name_fr', 'name_ar', 'external_id')
 
 
 @admin.register(LocationPoint)
@@ -22,8 +28,8 @@ class DeliveryProviderAdmin(admin.ModelAdmin):
 
 @admin.register(DeliveryType)
 class DeliveryTypeAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name_fr', 'name_ar', 'delivery_margin', 'provider', 'is_scheduled', 'is_active')
-    list_editable = ('delivery_margin', 'provider', 'is_scheduled', 'is_active')
+    list_display = ('code', 'name_fr', 'name_ar', 'delivery_margin', 'provider', 'is_scheduled', 'catalog_category', 'is_active')
+    list_editable = ('delivery_margin', 'provider', 'is_scheduled', 'catalog_category', 'is_active')
 
 
 @admin.register(Commande)

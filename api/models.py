@@ -81,6 +81,13 @@ class Category(models.Model):
     is_big_steak = models.BooleanField(default=False)
     type_class = models.CharField(max_length=50)
     order = models.IntegerField(default=0)
+    # Produits importés du catalogue partenaire (voir api/services/catalog.py) :
+    # `external_id` = id produit JEMLI, `external_image_url` = image source
+    # (déjà copiée dans `image` sur Cloudinary).
+    external_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    external_image_url = models.URLField(max_length=500, blank=True, default='')
+    # Désactivé plutôt que supprimé : ItemCommande.category est en CASCADE.
+    is_active = models.BooleanField(default=True)
 
 
     def __str__(self):
@@ -108,10 +115,9 @@ class DeliveryProvider(models.Model):
     point de départ isolé (cuisine ou boutique partenaire)."""
     name = models.CharField(max_length=100, unique=True)
     code = models.SlugField(max_length=50, unique=True)
-    # NB : le segment final (ex. "28/08/2026") ressemble à une date mais n'en
-    # est pas une — c'est un identifiant de route fixe propre au compte
-    # partenaire (confirmé empiriquement, voir api/services/jemli.py).
-    base_url = models.URLField(default='https://api-jemli.oneposts.io/api/third-party/28/08/2026/')
+    # NB : le segment final ("10/2026") est un identifiant de route fourni par
+    # JEMLI, qui a déjà changé une fois (voir api/services/jemli.py).
+    base_url = models.URLField(default='https://api-jemli.oneposts.io/api/third-party/10/2026/')
     api_key = models.CharField(max_length=255, blank=True, default='')
     api_secret = models.CharField(max_length=255, blank=True, default='')
     origin_point = models.ForeignKey(
@@ -145,6 +151,11 @@ class DeliveryType(models.Model):
     is_scheduled = models.BooleanField(
         default=False,
         help_text="Envoi différé au delivery_datetime choisi par le client (mes_plats).",
+    )
+    catalog_category = models.CharField(
+        max_length=50, blank=True, default='',
+        help_text="Catégorie du catalogue partenaire (ex : restaurant). Si renseignée, "
+                  "les articles de ce type sont importés depuis le partenaire.",
     )
     is_active = models.BooleanField(default=True)
 

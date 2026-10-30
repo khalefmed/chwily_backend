@@ -28,6 +28,7 @@ from firebase_admin._messaging_utils import UnregisteredError
 import logging.config
 
 from .services.notifications import send_notification, send_notifications_to_admins
+from .services.catalog import ensure_catalog_fresh
 from .services.delivery import (
     dispatch_commande, resolve_delivery_type, quote_delivery, apply_partner_status,
 )
@@ -125,7 +126,9 @@ class CategoryByTypeView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, type):
-        categories = Category.objects.filter(type=type).order_by('order')
+        # mes_plats : articles importés du catalogue JEMLI (services/catalog.py).
+        ensure_catalog_fresh(type)
+        categories = Category.objects.filter(type=type, is_active=True).order_by('order')
         serializer = CategorySerializer(categories, many=True)
         data = serializer.data
 

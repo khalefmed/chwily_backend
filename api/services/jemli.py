@@ -2,13 +2,11 @@
 
 Auth : en-têtes X-Api-Key / X-Api-Secret.
 
-⚠️ Le segment `28/08/2026` dans l'URL type ressemble à une date mais n'EN
-EST PAS UNE : testé empiriquement le 2026-09-17 contre l'API réelle, toutes
-les autres dates (y compris le jour même) renvoient 404 — seul ce segment
-fixe fonctionne. C'est un identifiant de route propre à notre compte
-partenaire, fourni par JEMLI. Il fait donc partie de `DeliveryProvider.base_url`
-(ex. `https://api-jemli.oneposts.io/api/third-party/28/08/2026/`) et n'est
-PAS recalculé par ce client.
+⚠️ Le segment de route (`10/2026`, auparavant `28/08/2026`) est fourni par
+JEMLI et fait partie de `DeliveryProvider.base_url` ; ce client ne le calcule
+pas. JEMLI l'a changé sans prévenir (constaté le 2026-10-26 : l'ancien segment
+renvoie 404 sur toutes les routes) — un 404 sur toutes les routes JEMLI
+signifie probablement un nouveau changement de segment.
 
 Confirmé (compute-pricing, requête réelle) :
     -> {"price": 0.0, "delivery_fee": 100.0, "distance_km": 4.13,
@@ -45,7 +43,7 @@ class JemliClient:
         }
 
     def _base(self):
-        # provider.base_url contient déjà le segment de route JEMLI (ex. .../28/08/2026/).
+        # provider.base_url contient déjà le segment de route JEMLI (ex. .../10/2026/).
         return self.provider.base_url.rstrip('/')
 
     @staticmethod
@@ -102,6 +100,18 @@ class JemliClient:
     def get_delivery(self, ref):
         url = f'{self._base()}/deliveries/{ref}/'
         return self._request('GET', url)
+
+    def list_products(self, category):
+        """Catalogue du vendeur lié aux clés API (le vendeur n'est pas paramétrable).
+
+        Confirmé (requête réelle, 2026-10-26) ; seule `category=restaurant` est acceptée :
+            -> {"category": "restaurant", "vendor_id": 472, "products": [
+                  {"id", "name", "description", "price", "discount_price",
+                   "image" (URL absolue), "menus": [{"id", "name"}]}]}
+        Pas de pagination.
+        """
+        url = f'{self._base()}/products/'
+        return self._request('GET', url, params={'category': category})
 
 
 # --- Extraction de valeurs depuis les réponses JEMLI. ------------------
