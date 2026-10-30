@@ -183,6 +183,9 @@ class AddCommandeView(APIView):
         # types sbou7 / poisson / l7am / mes_plats).
         if request.data.get('location_point'):
             commande_data['location_point'] = request.data.get('location_point')
+        if request.data.get('delivery_lat') and request.data.get('delivery_lng'):
+            commande_data['delivery_lat'] = request.data.get('delivery_lat')
+            commande_data['delivery_lng'] = request.data.get('delivery_lng')
         if request.data.get('delivery_datetime'):
             commande_data['delivery_datetime'] = request.data.get('delivery_datetime')
 
@@ -435,21 +438,33 @@ class LocationPointListView(generics.ListAPIView):
 class DeliveryQuoteView(APIView):
     """Devis de livraison partenaire, appelé au checkout avant le paiement.
 
-    Body : { "location_point": <id>, "delivery_type": "<code>" }
+    Body : { "lat": <float>, "lng": <float>, "delivery_type": "<code>" }
+           (ou "location_point": <id> à la place de lat/lng, ancien format)
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        lat = request.data.get('lat')
+        lng = request.data.get('lng')
         lp_id = request.data.get('location_point')
         type_code = request.data.get('delivery_type')
 
-        if not lp_id or not type_code:
+        if not type_code or not ((lat is not None and lng is not None) or lp_id):
             return Response(
-                {'detail': 'location_point et delivery_type sont requis.'},
+                {'detail': 'delivery_type et lat/lng (ou location_point) sont requis.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        destination = get_object_or_404(LocationPoint, pk=lp_id, is_active=True)
+        if lat is not None and lng is not None:
+            try:
+                lat, lng = float(lat), float(lng)
+            except (TypeError, ValueError):
+                return Response({'detail': 'lat/lng invalides.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+                return Response({'detail': 'lat/lng invalides.'}, status=status.HTTP_400_BAD_REQUEST)
+            destination = LocationPoint(lat=lat, lng=lng)
+        else:
+            destination = get_object_or_404(LocationPoint, pk=lp_id, is_active=True)
         delivery_type = get_object_or_404(DeliveryType, code=type_code, is_active=True)
         if delivery_type.provider is None:
             return Response(

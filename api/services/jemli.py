@@ -78,7 +78,7 @@ class JemliClient:
 
     def create_delivery(self, commande):
         origin = commande.delivery_provider.origin_point
-        destination = commande.location_point
+        destination = commande.destination
         if origin is None or destination is None:
             raise DeliveryPartnerError('Point de départ ou destination manquant.')
 

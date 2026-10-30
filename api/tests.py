@@ -81,3 +81,40 @@ class PartnerCatalogTests(TestCase):
     def test_other_types_do_not_call_partner(self, list_products, upload):
         self.client.get('/api/category/guewda/')
         list_products.assert_not_called()
+
+
+@mock.patch('api.services.jemli.JemliClient.compute_pricing')
+class DeliveryCoordinatesTests(TestCase):
+    def setUp(self):
+        from api.models import LocationPoint, User
+        provider = DeliveryProvider.objects.get(code='jemli')
+        provider.origin_point = LocationPoint.objects.first()
+        provider.save()
+        DeliveryType.objects.filter(code='mes_plats').update(provider=provider, is_active=True)
+        self.user = User.objects.create_user(phone=22222222, password='x')
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_quote_with_map_point(self, compute_pricing):
+        compute_pricing.return_value = {'delivery_fee': 100.0}
+
+        response = self.client.post('/api/commandes/delivery-quote/',
+                                    {'lat': 18.09, 'lng': -15.97, 'delivery_type': 'mes_plats'}, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['delivery_final_price'], 150.0)
+        destination = compute_pricing.call_args.args[1]
+        self.assertEqual((destination.lat, destination.lng), (18.09, -15.97))
+
+    def test_quote_rejects_bad_coordinates(self, compute_pricing):
+        response = self.client.post('/api/commandes/delivery-quote/',
+                                    {'lat': 'abc', 'lng': -15.97, 'delivery_type': 'mes_plats'}, format='json')
+        self.assertEqual(response.status_code, 400)
+        compute_pricing.assert_not_called()
+
+    def test_commande_destination_prefers_map_point(self, compute_pricing):
+        from api.models import Commande, LocationPoint
+        commande = Commande(location_point=LocationPoint.objects.first(), delivery_lat=18.1, delivery_lng=-15.9)
+        self.assertEqual((commande.destination.lat, commande.destination.lng), (18.1, -15.9))
+        commande.delivery_lat = None
+        self.assertEqual(commande.destination, commande.location_point)

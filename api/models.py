@@ -206,6 +206,10 @@ class Commande(models.Model):
         LocationPoint, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='commandes', help_text="Destination (quartier choisi par le client).",
     )
+    # Point de livraison choisi sur la carte par le client (prioritaire sur
+    # location_point, conservé pour les anciennes commandes).
+    delivery_lat = models.FloatField(null=True, blank=True)
+    delivery_lng = models.FloatField(null=True, blank=True)
     driver_phone = models.CharField(max_length=30, blank=True, default='')
     partner_delivery_ref = models.CharField(
         max_length=100, blank=True, default='',
@@ -224,6 +228,13 @@ class Commande(models.Model):
         max_length=20, choices=DISPATCH_STATUS_CHOICES, default='pending',
     )
     dispatched_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def destination(self):
+        """Objet avec `.lat`/`.lng` : point choisi sur la carte, sinon quartier."""
+        if self.delivery_lat is not None and self.delivery_lng is not None:
+            return LocationPoint(lat=self.delivery_lat, lng=self.delivery_lng)
+        return self.location_point
 
     def save(self, *args, **kwargs):
         if not self.code:

@@ -82,7 +82,8 @@ class CommandeSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'code', 'prix', 'date', 'status', 'location', 'livraison', 'capture', 'avec_6begat',
             'phone', 'user', 'items',
-            'delivery_type', 'delivery_provider', 'location_point', 'driver_phone',
+            'delivery_type', 'delivery_provider', 'location_point', 'delivery_lat', 'delivery_lng',
+            'driver_phone',
             'partner_delivery_ref', 'partner_delivery_fee', 'delivery_final_price',
             'delivery_datetime', 'dispatch_status', 'dispatched_at',
         ]
