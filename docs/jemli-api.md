@@ -148,6 +148,8 @@ Le tarif est **`delivery_fee`** (pas `price`). Chez nous :
 
 ## Webhook (JEMLI → Chwily)
 
+Contrat défini et transmis à JEMLI : voir `jemli-callback.md` (les lignes ci-dessous datent d'avant).
+
 Notre endpoint est `POST /api/delivery/webhook/jemli/`, avec l'en-tête
 `X-Webhook-Secret: <DeliveryProvider.webhook_secret>`.
 
