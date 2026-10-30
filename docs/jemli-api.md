@@ -107,8 +107,19 @@ Le tarif est **`delivery_fee`** (pas `price`). Chez nous :
 }
 ```
 
-- **`status` est un objet** : le code machine est dans `status.code`. Seul code observé :
-  `customer_cancelled`.
+- **`status` est un objet** : le code machine est dans `status.code`.
+- Codes connus (liste transmise par JEMLI le 2026-10-30 + observés) et correspondance chez nous :
+
+  | `status.code` JEMLI | `Commande.status` |
+  | --- | --- |
+  | `driver_assigned` | `driver_assigned` |
+  | `driver_arrived_to_pickup_point` | `loading` (en cours) |
+  | `driver_arrived_to_drop_point` | `loading` (inchangé) |
+  | `delivered` | `delivered` |
+  | `customer_cancelled` (observé) | `rejected` |
+
+  Inconnus : le statut initial (avant affectation d'un livreur), les autres annulations
+  et le passage « commande récupérée ».
 - Format de `driver` quand il est renseigné : inconnu (probablement nom et téléphone).
 
 ### `POST orders/?category=restaurant` — commande restaurant (plats + livraison) 📄 ⚠️
@@ -153,12 +164,12 @@ de leur côté. La vue accepte de façon défensive `delivery_id` | `id` | `refe
 | Référence et téléphone | `custom_description` = `Chwily <code commande> - <téléphone>`, seul moyen de transmettre le téléphone au livreur |
 | Destination | point choisi sur la carte (`Commande.delivery_lat/lng`), sinon le quartier |
 | Identifiant retourné | lu défensivement (`id`, `delivery_id`, `reference`…, éventuellement sous `data` / `order` / `delivery`) |
-| Statut | `status.code` (objet) ou chaîne → `JEMLI_STATUS_MAP` ; seul `customer_cancelled` est un code réel, le reste est deviné |
+| Statut | `status.code` (objet) ou chaîne → `JEMLI_STATUS_MAP` (codes réels ci-dessus ; un code inconnu ne change rien) |
 | Sandbox | `DELIVERY_SANDBOX=True` : aucun appel `orders/` ni `deliveries/` réel |
 
 ## Questions ouvertes pour JEMLI
 
-1. Liste complète des `status.code` (création → livré, annulations) et leur ordre.
+1. Liste complète des `status.code` : statut initial, annulations (restaurant, livreur), commande récupérée.
 2. Format du webhook, et comment l'enregistrer chez eux (URL + secret).
 3. Réponse de `POST orders/` : identifiant, et comment suivre une commande ensuite.
 4. `customer_description` ou `custom_description` pour `orders/` ?

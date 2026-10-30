@@ -19,27 +19,20 @@ from .notifications import send_notification, send_notifications_to_admins
 logger = logging.getLogger(__name__)
 
 # Correspondance `status.code` JEMLI -> statut Commande.
-# Seul `customer_cancelled` est un code réel observé ; les autres sont devinés.
-# TODO(jemli-doc) : remplacer par la liste réelle (docs/jemli-api.md).
+# Codes réels (fournis par JEMLI / observés) : voir docs/jemli-api.md.
+# Un code absent de la table ne change pas le statut de la commande.
 JEMLI_STATUS_MAP = {
+    'driver_assigned': 'driver_assigned',
+    # Livreur au restaurant / point de départ : la commande est « en cours ».
+    'driver_arrived_to_pickup_point': 'loading',
+    'driver_arrived_to_drop_point': 'loading',
+    'delivered': 'delivered',
     'customer_cancelled': 'rejected',
+    # TODO(jemli-doc) : codes devinés, à remplacer par la liste complète.
     'vendor_cancelled': 'rejected',
     'driver_cancelled': 'rejected',
-    'pending': 'looking_for_driver',
-    'searching': 'looking_for_driver',
-    'looking_for_driver': 'looking_for_driver',
-    'assigned': 'driver_assigned',
-    'driver_assigned': 'driver_assigned',
-    'accepted': 'driver_assigned',
-    'picked_up': 'loading',
-    'in_transit': 'loading',
-    'on_the_way': 'loading',
-    'delivering': 'loading',
-    'delivered': 'delivered',
-    'completed': 'delivered',
     'cancelled': 'rejected',
     'canceled': 'rejected',
-    'failed': 'rejected',
 }
 
 # Libellés notifiés au client, par langue.
