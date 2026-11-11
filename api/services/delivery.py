@@ -36,6 +36,7 @@ CALLBACK_STATUSES = set(JEMLI_STATUS_MAP) | {'cancelled'}
 # Libellés notifiés au client, par langue.
 _STATUS_LABELS = {
     'ar': {
+        'paid': 'مدفوع',
         'looking_for_driver': 'جاري البحث عن موصّل',
         'driver_assigned': 'تم تعيين موصّل',
         'loading': 'قيد المعالجة',
@@ -43,6 +44,7 @@ _STATUS_LABELS = {
         'rejected': 'مرفوض',
     },
     'fr': {
+        'paid': 'Payée',
         'looking_for_driver': "Recherche d'un livreur",
         'driver_assigned': 'Livreur assigné',
         'loading': 'En cours',

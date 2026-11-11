@@ -234,3 +234,105 @@ class PartnerCallbackTests(TestCase):
         for response, http, error in cases:
             self.assertEqual(response.status_code, http)
             self.assertEqual(response.json()['error'], error)
+
+
+def _run_now(func, *args):
+    func(*args)
+
+
+@override_settings(TWIZEPAY_WEBHOOK_SECRET='whsec_test')
+@mock.patch('api.services.payments._in_background', side_effect=_run_now)
+@mock.patch('api.services.payments.send_notifications_to_admins')
+@mock.patch('api.services.payments.notify_client_status')
+class TwizePayWebhookTests(TestCase):
+    URL = '/api/payments/webhook/twizepay/'
+
+    def setUp(self):
+        from api.models import Commande, User
+        self.user = User.objects.create_user(phone=33333333, password='x')
+        # Contact 20004200, paiement depuis un autre numéro : 1000 + 150 = 1150 MRU.
+        self.commande = Commande.objects.create(
+            prix=1000, livraison=150, location='x', phone='20004200', user=self.user, payment_phone='36899900')
+        self.client = APIClient()
+
+    def _tx(self, **overrides):
+        body = {'id': '8b1e0a2c', 'occurredAt': '2026-11-07T20:58:00Z', 'wallet': 'BANKILY',
+                'transactionId': 'TXN-10001', 'direction': 'CR', 'amount': 1150.00,
+                'counterpartyNumber': '+22236899900', 'counterpartyName': 'A Buyer', 'balanceAfter': 5000.00}
+        body.update(overrides)
+        return body
+
+    def _post(self, body, event_type='transaction.created', secret='whsec_test', timestamp=None):
+        import hashlib, hmac, json, time
+        raw = json.dumps(body).encode()
+        ts = str(int(time.time()) if timestamp is None else timestamp)
+        sig = hmac.new(secret.encode(), ts.encode() + b'.' + raw, hashlib.sha256).hexdigest()
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.generic('POST', self.URL, raw, content_type='application/json',
+                                       HTTP_TWIZEPAY_EVENT_ID='evt-1', HTTP_TWIZEPAY_EVENT_TYPE=event_type,
+                                       HTTP_TWIZEPAY_TIMESTAMP=ts, HTTP_TWIZEPAY_SIGNATURE=f't={ts},v1={sig}')
+
+    def test_exact_amount_marks_order_paid(self, notify, notify_admins, _bg):
+        from api.models import WalletTransaction
+        response = self._post(self._tx())
+        self.assertEqual(response.status_code, 200)
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'paid')
+        tx = WalletTransaction.objects.get()
+        self.assertEqual((tx.match_status, tx.commande, tx.payer_phone), ('matched', self.commande, '36899900'))
+        notify.assert_called_once_with(self.commande, 'paid')
+
+    def test_other_amount_or_number_does_not_pay(self, notify, notify_admins, _bg):
+        self._post(self._tx(id='a', amount=1000))
+        self._post(self._tx(id='b', counterpartyNumber='+22220004200'))
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'waiting')
+        notify_admins.assert_called_once()  # montant différent sur le bon numéro
+
+    def test_replay_and_update_do_not_pay_twice(self, notify, notify_admins, _bg):
+        from api.models import Commande, WalletTransaction
+        second = Commande.objects.create(prix=1000, livraison=150, location='x', phone='1', user=self.user,
+                                         payment_phone='36899900')
+        self._post(self._tx())
+        self._post(self._tx())
+        self._post(self._tx(counterpartyName='Buyer Name'), event_type='transaction.updated')
+        second.refresh_from_db()
+        self.assertEqual(second.status, 'waiting')
+        self.assertEqual(WalletTransaction.objects.count(), 1)
+        self.assertEqual(WalletTransaction.objects.get().counterparty_name, 'Buyer Name')
+
+    def test_number_completed_by_update_then_matches(self, notify, notify_admins, _bg):
+        self._post(self._tx(counterpartyNumber=None))
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'waiting')
+        self._post(self._tx(), event_type='transaction.updated')
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'paid')
+
+    def test_payment_before_order(self, notify, notify_admins, _bg):
+        from api.models import Commande
+        from api.services.payments import match_commande
+        self.commande.delete()
+        self._post(self._tx())
+        commande = Commande.objects.create(prix=1000, livraison=150, location='x', phone='1', user=self.user,
+                                           payment_phone='36899900')
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertIsNotNone(match_commande(commande))
+        commande.refresh_from_db()
+        self.assertEqual(commande.status, 'paid')
+
+    def test_test_event_and_outgoing_are_not_payments(self, notify, notify_admins, _bg):
+        from api.models import WalletTransaction
+        self.assertEqual(self._post(self._tx(amount=0, transactionId='TXN-TEST'), event_type='transaction.test').status_code, 200)
+        self.assertFalse(WalletTransaction.objects.exists())
+        self._post(self._tx(direction='DR'))
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'waiting')
+        self.assertEqual(WalletTransaction.objects.get().match_status, 'ignored')
+
+    def test_rejects_bad_signature(self, notify, notify_admins, _bg):
+        import time
+        self.assertEqual(self._post(self._tx(), secret='wrong').status_code, 401)
+        self.assertEqual(self._post(self._tx(), timestamp=int(time.time()) - 600).status_code, 401)
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'waiting')

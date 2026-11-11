@@ -28,6 +28,7 @@ urlpatterns = [
 
     path('location-points/', LocationPointListView.as_view(), name='location-points'),
     path('delivery/webhook/<str:provider_code>/', DeliveryWebhookView.as_view(), name='delivery-webhook'),
+    path('payments/webhook/twizepay/', TwizePayWebhookView.as_view(), name='twizepay-webhook'),
 
 
     path('posters/', PosterViewSet.as_view({'get': 'list', 'post': 'create', 'put': 'update', 'delete': 'destroy'}), name='poster-list'),

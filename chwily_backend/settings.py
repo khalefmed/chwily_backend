@@ -185,3 +185,7 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # sans ce garde-fou, faire passer une commande de test à "paid" en dev
 # déclencherait une VRAIE livraison chez JEMLI (un chauffeur réel serait envoyé).
 DELIVERY_SANDBOX = config('DELIVERY_SANDBOX', default=False, cast=bool)
+
+# Secret de signature du webhook TwizePay (affiché une seule fois dans
+# TwizePay > Webhooks). Vide : tous les appels sont refusés.
+TWIZEPAY_WEBHOOK_SECRET = config('TWIZEPAY_WEBHOOK_SECRET', default='')

@@ -34,6 +34,8 @@ from .services.delivery import (
     CALLBACK_STATUSES, JEMLI_CANCEL_CODES,
 )
 from .services.jemli import DeliveryPartnerError
+from .services.payments import match_commande, match_transaction, normalize_phone, record_transaction, verify_signature
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +191,8 @@ class AddCommandeView(APIView):
             commande_data['delivery_lng'] = request.data.get('delivery_lng')
         if request.data.get('delivery_datetime'):
             commande_data['delivery_datetime'] = request.data.get('delivery_datetime')
+        if request.data.get('payment_phone'):
+            commande_data['payment_phone'] = normalize_phone(request.data.get('payment_phone'))
 
         if 'capture' in request.FILES:
             commande_data['capture'] = request.FILES['capture']
@@ -233,6 +237,13 @@ class AddCommandeView(APIView):
                 ])
         except Exception:
             logger.exception('Résolution livraison partenaire échouée pour %s', commande.code)
+
+        # Le client a pu payer avant de valider : paiement TwizePay déjà reçu ?
+        try:
+            if match_commande(commande):
+                commande.refresh_from_db()
+        except Exception:
+            logger.exception('Rapprochement TwizePay échoué pour %s', commande.code)
 
         user = request.user
 
@@ -533,6 +544,50 @@ class DeliveryWebhookView(APIView):
         driver_phone = str(driver.get('phone') or '').strip() if isinstance(driver, dict) else ''
         apply_partner_status(commande, code, driver_phone or None)
         return Response({'ok': True, 'id': ref, 'status': code})
+
+
+class TwizePayWebhookView(APIView):
+    """Webhook TwizePay : une transaction détectée sur un de nos wallets.
+
+    POST /api/payments/webhook/twizepay/
+    En-têtes : TwizePay-Event-Id, TwizePay-Event-Type, TwizePay-Timestamp,
+               TwizePay-Signature (t=<ts>,v1=<HMAC-SHA256 hex de "<ts>.<corps brut>">)
+    Body     : la transaction (id, wallet, transactionId, direction, amount,
+               counterpartyNumber, counterpartyName, balanceAfter, occurredAt)
+
+    2xx = livré pour TwizePay (sinon 8 tentatives) : on ne répond 200 qu'une
+    fois la transaction enregistrée.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        # Signature calculée sur les octets bruts : lire request.body avant request.data.
+        raw_body = request.body
+        if not verify_signature(settings.TWIZEPAY_WEBHOOK_SECRET,
+                                request.headers.get('TwizePay-Signature', ''),
+                                request.headers.get('TwizePay-Timestamp', ''), raw_body):
+            return Response({'ok': False, 'error': 'invalid_signature'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        event_type = request.headers.get('TwizePay-Event-Type', '')
+        if event_type == 'transaction.test':
+            return Response({'ok': True, 'test': True})
+
+        try:
+            payload = json.loads(raw_body)
+        except ValueError:
+            payload = None
+        tx = record_transaction(payload, request.headers.get('TwizePay-Event-Id', '')) \
+            if isinstance(payload, dict) else None
+        if tx is None:
+            return Response({'ok': False, 'error': 'invalid_body'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            match_transaction(tx)
+        except Exception:
+            # Paiement enregistré : un admin pourra valider la commande à la main.
+            logger.exception('Rapprochement de la transaction TwizePay %s échoué', tx.external_id)
+        return Response({'ok': True})
 
 
 class ToggleUserTypeView(APIView):

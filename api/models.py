@@ -230,6 +230,15 @@ class Commande(models.Model):
     )
     dispatched_at = models.DateTimeField(null=True, blank=True)
 
+    # Numéro du wallet avec lequel le client paie (peut différer de `phone`),
+    # normalisé sur 8 chiffres : sert au rapprochement automatique TwizePay.
+    payment_phone = models.CharField(max_length=20, blank=True, default='', db_index=True)
+
+    @property
+    def total_amount(self):
+        """Montant que le client doit payer : articles + livraison."""
+        return (self.prix or 0) + (self.livraison or 0)
+
     @property
     def destination(self):
         """Objet avec `.lat`/`.lng` : point choisi sur la carte, sinon quartier."""
@@ -247,6 +256,47 @@ class Commande(models.Model):
         return f"Commande {self.id} - {self.status} - {self.title}"
 
 
+
+
+class WalletTransaction(models.Model):
+    """Transaction détectée par TwizePay sur un de nos wallets (webhook
+    payments/webhook/twizepay/). Toutes sont conservées, entrées comme sorties."""
+    DIRECTION_CHOICES = [('CR', 'Entrée'), ('DR', 'Sortie')]
+    MATCH_STATUS_CHOICES = [
+        ('pending', 'Non rapprochée'),
+        ('matched', 'Rapprochée'),
+        ('ignored', 'Ignorée'),
+    ]
+
+    external_id = models.CharField(max_length=64, unique=True, help_text="`id` TwizePay.")
+    bank_reference = models.CharField(max_length=100, blank=True, default='', help_text="`transactionId` de la banque.")
+    wallet = models.CharField(max_length=30, blank=True, default='')
+    direction = models.CharField(max_length=2, choices=DIRECTION_CHOICES)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    counterparty_number = models.CharField(max_length=30, blank=True, default='')
+    counterparty_name = models.CharField(max_length=150, blank=True, default='')
+    payer_phone = models.CharField(
+        max_length=20, blank=True, default='', db_index=True,
+        help_text="counterparty_number normalisé sur 8 chiffres.",
+    )
+    balance_after = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    occurred_at = models.DateTimeField(null=True, blank=True)
+    received_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_event_id = models.CharField(max_length=64, blank=True, default='')
+    raw = models.JSONField(default=dict, blank=True)
+
+    commande = models.ForeignKey(
+        Commande, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments',
+    )
+    match_status = models.CharField(max_length=10, choices=MATCH_STATUS_CHOICES, default='pending')
+    matched_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-received_at']
+
+    def __str__(self):
+        return f"{self.wallet} {self.direction} {self.amount} MRU - {self.counterparty_number or '?'}"
 
 
 class ItemCommande(models.Model):

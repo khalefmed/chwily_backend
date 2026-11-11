@@ -36,7 +36,7 @@ class DeliveryTypeAdmin(admin.ModelAdmin):
 class CommandeAdmin(admin.ModelAdmin):
     list_display = ('id', 'code', 'title', 'status', 'dispatch_status', 'delivery_provider', 'delivery_datetime', 'date')
     list_filter = ('status', 'dispatch_status', 'delivery_provider', 'delivery_type')
-    search_fields = ('code', 'phone', 'title')
+    search_fields = ('code', 'phone', 'payment_phone', 'title')
     readonly_fields = ('code', 'date')
 
 @admin.register(AppConfiguration)
@@ -54,3 +54,12 @@ class AppConfigurationAdmin(admin.ModelAdmin):
 admin.site.site_header = "Chwily Admin"
 admin.site.site_title = "Chwily Admin Portal"
 admin.site.index_title = "Welcome to Chwily Admin Portal"
+
+@admin.register(WalletTransaction)
+class WalletTransactionAdmin(admin.ModelAdmin):
+    list_display = ('received_at', 'wallet', 'direction', 'amount', 'counterparty_number', 'counterparty_name',
+                    'match_status', 'commande')
+    list_filter = ('match_status', 'direction', 'wallet')
+    search_fields = ('external_id', 'bank_reference', 'counterparty_number', 'payer_phone', 'commande__code')
+    raw_id_fields = ('commande',)
+    readonly_fields = [f.name for f in WalletTransaction._meta.fields if f.name not in ('commande', 'match_status')]
