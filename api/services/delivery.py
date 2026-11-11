@@ -25,16 +25,15 @@ JEMLI_STATUS_MAP = {
     # Course (deliveries/).
     'driver_assigned': 'driver_assigned',
     'driver_arrived_to_pickup_point': 'loading',
-    'driver_arrived_to_drop_point': 'loading',
-    # Commande restaurant (orders/), liste transmise par JEMLI le 2026-11-11.
-    # Commande.status reste grossier (l'app ne connaît que ces statuts) ; le
-    # détail est dans Commande.partner_status et dans la notification client.
-    'vendor_confirmed': 'loading',
-    'vendor_preparing': 'loading',
-    'ready_for_pickup': 'loading',
-    'driver_collected': 'loading',
-    'driver_on_way': 'loading',
-    'driver_arrived': 'loading',
+    'driver_arrived_to_drop_point': 'driver_arrived',
+    # Commande restaurant (orders/), liste transmise par JEMLI le 2026-11-11 :
+    # mêmes noms que nos statuts.
+    'vendor_confirmed': 'vendor_confirmed',
+    'vendor_preparing': 'vendor_preparing',
+    'ready_for_pickup': 'ready_for_pickup',
+    'driver_collected': 'driver_collected',
+    'driver_on_way': 'driver_on_way',
+    'driver_arrived': 'driver_arrived',
     'delivered': 'delivered',
 }
 # Annulation côté JEMLI (livraison ou restaurant) : la commande garde son
@@ -42,40 +41,46 @@ JEMLI_STATUS_MAP = {
 JEMLI_CANCEL_CODES = {'cancelled', 'customer_cancelled', 'vendor_cancelled'}
 CALLBACK_STATUSES = set(JEMLI_STATUS_MAP) | {'cancelled', 'vendor_cancelled'}
 
-# Libellés JEMLI (fr, ar) envoyés au client à chaque nouveau statut partenaire.
-JEMLI_STATUS_LABELS = {
-    'driver_assigned': ('Livreur assigné', 'تم تعيين موصّل'),
-    'driver_arrived_to_pickup_point': ('Livreur arrivé au point de départ', 'وصل السائق إلى نقطة الاستلام'),
-    'driver_arrived_to_drop_point': ('Livreur arrivé', 'وصل السائق'),
-    'vendor_confirmed': ('Vendeur confirmé', 'تم تأكيد البائع'),
-    'vendor_preparing': ('Préparation de la commande', 'جاري تجهيز الطلب'),
-    'ready_for_pickup': ('Prêt pour récupérer', 'جاهز للاستلام'),
-    'driver_collected': ('Commande récupérée', 'تم استلام الطلب'),
-    'driver_on_way': ('En cours de livraison', 'في الطريق للتسليم'),
-    'driver_arrived': ('Livreur arrivé', 'وصل السائق'),
-    'delivered': ('Livrée', 'تم التوصيل'),
-}
-
-# Ordre de progression : un callback en retard ne fait jamais reculer la commande.
+# Progression : un callback en retard ne fait jamais reculer la commande. Rang
+# égal = étapes concurrentes (le livreur peut être affecté pendant la préparation).
 _STATUS_RANK = {
-    'waiting': 0, 'paid': 1, 'looking_for_driver': 2, 'driver_assigned': 3, 'loading': 4, 'delivered': 5,
+    'waiting': 0, 'paid': 1, 'looking_for_driver': 2,
+    'vendor_confirmed': 3, 'vendor_preparing': 4,
+    'driver_assigned': 5, 'ready_for_pickup': 5,
+    'loading': 6, 'driver_collected': 6, 'driver_on_way': 7, 'driver_arrived': 8,
+    'delivered': 9,
 }
 
-# Libellés notifiés au client, par langue.
-_STATUS_LABELS = {
+# Libellés notifiés au client (aussi par ChangeCommandeStatusView), par langue.
+# Tout statut de Commande.STATUS_CHOICES doit y figurer.
+STATUS_LABELS = {
     'ar': {
+        'waiting': 'قيد الانتظار',
         'paid': 'مدفوع',
         'looking_for_driver': 'جاري البحث عن موصّل',
+        'vendor_confirmed': 'تم تأكيد البائع',
+        'vendor_preparing': 'جاري تجهيز الطلب',
+        'ready_for_pickup': 'جاهز للاستلام',
         'driver_assigned': 'تم تعيين موصّل',
         'loading': 'قيد المعالجة',
+        'driver_collected': 'تم استلام الطلب',
+        'driver_on_way': 'في الطريق للتسليم',
+        'driver_arrived': 'وصل السائق',
         'delivered': 'تم التوصيل',
         'rejected': 'مرفوض',
     },
     'fr': {
+        'waiting': 'En attente',
         'paid': 'Payée',
         'looking_for_driver': "Recherche d'un livreur",
+        'vendor_confirmed': 'Vendeur confirmé',
+        'vendor_preparing': 'Préparation de la commande',
+        'ready_for_pickup': 'Prêt pour récupérer',
         'driver_assigned': 'Livreur assigné',
         'loading': 'En cours',
+        'driver_collected': 'Commande récupérée',
+        'driver_on_way': 'En cours de livraison',
+        'driver_arrived': 'Livreur arrivé',
         'delivered': 'Livrée',
         'rejected': 'Rejetée',
     },
@@ -212,19 +217,16 @@ def send_to_partner(commande):
     return True
 
 
-def notify_client_status(commande, new_status, partner_code=None):
+def notify_client_status(commande, new_status):
     lang = getattr(commande.user, 'default_lang', 'fr') or 'fr'
-    labels = _STATUS_LABELS.get(lang, _STATUS_LABELS['fr'])
+    labels = STATUS_LABELS.get(lang, STATUS_LABELS['fr'])
     label = labels.get(new_status, new_status)
-    if partner_code in JEMLI_STATUS_LABELS:
-        label = JEMLI_STATUS_LABELS[partner_code][1 if lang == 'ar' else 0]
     if lang == 'ar':
         body = f'تم تحديث حالة طلبك {commande.code}: {label}'
     else:
         body = f'Votre commande {commande.code} : {label}'
     send_notification(label, body, commande.user.fcm_token, data={
         'type': 'commande_status', 'commande': commande.code, 'status': new_status,
-        'partner_status': partner_code or '',
     })
 
 
@@ -265,15 +267,14 @@ def apply_partner_status(commande, external_status, driver_phone=None):
     mapped = JEMLI_STATUS_MAP.get(code)
     current_rank = _STATUS_RANK.get(commande.status)
     # Pas de retour en arrière (callbacks en retard), ni de sortie de `rejected`.
-    if mapped and current_rank is not None and _STATUS_RANK[mapped] > current_rank:
+    if (mapped and mapped != commande.status and current_rank is not None
+            and commande.status != 'delivered' and _STATUS_RANK[mapped] >= current_rank):
         commande.status = mapped
         fields.append('status')
         changed = mapped
 
     if fields:
         commande.save(update_fields=fields)
-    # Le client est prévenu à chaque nouvelle étape JEMLI, même quand
-    # Commande.status ne bouge pas (ex. préparation -> récupérée : « en cours »).
-    if mapped and (changed or new_partner_status):
-        notify_client_status(commande, commande.status, code)
+    if changed:
+        notify_client_status(commande, changed)
     return changed

@@ -168,8 +168,15 @@ class Commande(models.Model):
         ('waiting', 'Waiting'),
         ('paid', 'Paid'),
         ('looking_for_driver', 'Looking for driver'),
+        # Étapes JEMLI d'une commande restaurant (orders/).
+        ('vendor_confirmed', 'Vendor confirmed'),
+        ('vendor_preparing', 'Vendor preparing'),
+        ('ready_for_pickup', 'Ready for pickup'),
         ('driver_assigned', 'Driver assigned'),
         ('loading', 'Loading'),
+        ('driver_collected', 'Driver collected'),
+        ('driver_on_way', 'Driver on the way'),
+        ('driver_arrived', 'Driver arrived'),
         ('delivered', 'Delivered'),
         ('rejected', 'Rejected'),
     ]

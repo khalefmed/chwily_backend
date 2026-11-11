@@ -23,30 +23,30 @@ X-Api-Key: <DeliveryProvider "jemli".webhook_secret de l'environnement>
 
 ## Statuts
 
-`Commande.status` reste dans la liste connue de l'app ; le code JEMLI reçu est gardé dans
-`Commande.partner_status`, et le client reçoit une notification avec le libellé JEMLI (fr/ar)
-à chaque nouvelle étape. Un statut ne fait jamais reculer la commande.
+Depuis le 2026-11-11, les étapes JEMLI sont de vrais statuts `Commande.status` (mêmes noms),
+affichés par l'app et notifiés au client. Le dernier code reçu est aussi gardé dans
+`Commande.partner_status`. Un statut ne fait jamais reculer la commande (`_STATUS_RANK`).
 
-Commande restaurant (`orders/`, liste JEMLI du 2026-11-11) :
+Commande restaurant (`orders/`) :
 
-| `status` | Libellé client | `Commande.status` |
+| `status` JEMLI | `Commande.status` | Libellé |
 | --- | --- | --- |
-| `vendor_confirmed` | Vendeur confirmé | `loading` |
-| `vendor_preparing` | Préparation de la commande | `loading` |
-| `ready_for_pickup` | Prêt pour récupérer | `loading` |
-| `driver_collected` | Commande récupérée | `loading` |
-| `driver_on_way` | En cours de livraison | `loading` |
-| `driver_arrived` | Livreur arrivé | `loading` |
-| `delivered` | Livrée | `delivered` (final) |
-| `vendor_cancelled` | — (admins notifiés) | inchangé, `dispatch_status = cancelled` |
+| `vendor_confirmed` | `vendor_confirmed` | Vendeur confirmé |
+| `vendor_preparing` | `vendor_preparing` | Préparation de la commande |
+| `ready_for_pickup` | `ready_for_pickup` | Prêt pour récupérer |
+| `driver_collected` | `driver_collected` | Commande récupérée |
+| `driver_on_way` | `driver_on_way` | En cours de livraison |
+| `driver_arrived` | `driver_arrived` | Livreur arrivé |
+| `delivered` | `delivered` (final) | Livrée |
+| `vendor_cancelled` | inchangé, `dispatch_status = cancelled`, admins notifiés | — |
 
 Course (`deliveries/`) :
 
-| `status` | `Commande.status` |
+| `status` JEMLI | `Commande.status` |
 | --- | --- |
 | `driver_assigned` | `driver_assigned` |
 | `driver_arrived_to_pickup_point` | `loading` |
-| `driver_arrived_to_drop_point` | `loading` |
+| `driver_arrived_to_drop_point` | `driver_arrived` |
 | `delivered` | `delivered` (final) |
 | `cancelled` | inchangé, `dispatch_status = cancelled`, admins notifiés |
 

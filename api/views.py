@@ -31,7 +31,7 @@ from .services.notifications import send_notification, send_notifications_to_adm
 from .services.catalog import ensure_catalog_fresh
 from .services.delivery import (
     dispatch_commande, resolve_delivery_type, quote_delivery, apply_partner_status,
-    CALLBACK_STATUSES, JEMLI_CANCEL_CODES,
+    CALLBACK_STATUSES, JEMLI_CANCEL_CODES, STATUS_LABELS,
 )
 from .services.jemli import DeliveryPartnerError
 from .services.payments import match_commande, match_transaction, normalize_phone, record_transaction, verify_signature
@@ -376,7 +376,7 @@ class ChangeCommandeStatusView(APIView):
 
     def post(self, request, pk):
         new_status = request.data.get('status')
-        if new_status not in ['waiting', 'paid', 'looking_for_driver', 'driver_assigned', 'loading', 'delivered', 'rejected']:
+        if new_status not in dict(Commande.STATUS_CHOICES):
             return Response({'detail': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
 
         commande = get_object_or_404(Commande, pk=pk)
@@ -399,26 +399,7 @@ class ChangeCommandeStatusView(APIView):
 
         user = commande.user
 
-        statuses = {
-            'ar': {
-                'waiting': 'قيد الانتظار',
-                'paid': 'مدفوع',
-                'looking_for_driver': 'جاري البحث عن موصّل',
-                'driver_assigned': 'تم تعيين موصّل',
-                'loading': 'قيد المعالجة',
-                'delivered': 'تم التوصيل',
-                'rejected': 'مرفوض',
-            },
-            'fr' : {
-                'waiting' : 'en attente',
-                'paid' : 'paye',
-                'looking_for_driver' : "recherche d'un livreur",
-                'driver_assigned' : 'livreur assigne',
-                'loading' : 'en cours',
-                'delivered' : 'livre',
-                'rejected' : 'rejecte',
-            }
-        }
+        statuses = STATUS_LABELS
 
 
                 

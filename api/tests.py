@@ -200,7 +200,7 @@ class PartnerCallbackTests(TestCase):
     def test_full_lifecycle(self, notify, notify_admins):
         expected = [('driver_assigned', 'driver_assigned'),
                     ('driver_arrived_to_pickup_point', 'loading'),
-                    ('driver_arrived_to_drop_point', 'loading'),
+                    ('driver_arrived_to_drop_point', 'driver_arrived'),
                     ('delivered', 'delivered')]
         for code, status in expected:
             response = self._post({'id': 137253, 'status': code, 'driver': {'name': 'Sidi', 'phone': '22123456'}})
@@ -364,8 +364,7 @@ class JemliOrderStatusTests(TestCase):
         for code in steps:
             self.assertEqual(self._post(code).status_code, 200)
             self.commande.refresh_from_db()
-            self.assertEqual(self.commande.partner_status, code)
-        self.assertEqual(self.commande.status, 'delivered')
+            self.assertEqual((self.commande.status, self.commande.partner_status), (code, code))
         titles = [c.args[0] for c in send.call_args_list]
         self.assertEqual(titles, ['Vendeur confirmé', 'Préparation de la commande', 'Prêt pour récupérer',
                                   'Commande récupérée', 'En cours de livraison', 'Livreur arrivé', 'Livrée'])
@@ -374,9 +373,14 @@ class JemliOrderStatusTests(TestCase):
         self._post('vendor_preparing')
         self._post('vendor_preparing')
         self.assertEqual(send.call_count, 1)
-        self._post('driver_assigned')  # arrive en retard : ne fait pas reculer « en cours »
+        self._post('driver_assigned')  # affecté pendant la préparation
+        self._post('ready_for_pickup')
         self.commande.refresh_from_db()
-        self.assertEqual(self.commande.status, 'loading')
+        self.assertEqual(self.commande.status, 'ready_for_pickup')
+        self._post('driver_on_way')
+        self._post('driver_assigned')  # en retard : ne fait pas reculer la commande
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'driver_on_way')
         self._post('delivered')
         self._post('driver_on_way')
         self.commande.refresh_from_db()
