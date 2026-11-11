@@ -22,16 +22,44 @@ logger = logging.getLogger(__name__)
 # (DeliveryWebhookView, contrat dans docs/jemli-callback.md) ou lus dans
 # `status.code` des réponses JEMLI -> statut Commande.
 JEMLI_STATUS_MAP = {
+    # Course (deliveries/).
     'driver_assigned': 'driver_assigned',
-    # Livreur au restaurant / point de départ : la commande est « en cours ».
     'driver_arrived_to_pickup_point': 'loading',
     'driver_arrived_to_drop_point': 'loading',
+    # Commande restaurant (orders/), liste transmise par JEMLI le 2026-11-11.
+    # Commande.status reste grossier (l'app ne connaît que ces statuts) ; le
+    # détail est dans Commande.partner_status et dans la notification client.
+    'vendor_confirmed': 'loading',
+    'vendor_preparing': 'loading',
+    'ready_for_pickup': 'loading',
+    'driver_collected': 'loading',
+    'driver_on_way': 'loading',
+    'driver_arrived': 'loading',
     'delivered': 'delivered',
 }
-# Annulation de la livraison côté JEMLI : la commande garde son statut, les
-# admins sont prévenus pour réagir (ce n'est pas un rejet de la commande).
-JEMLI_CANCEL_CODES = {'cancelled', 'customer_cancelled'}
-CALLBACK_STATUSES = set(JEMLI_STATUS_MAP) | {'cancelled'}
+# Annulation côté JEMLI (livraison ou restaurant) : la commande garde son
+# statut, les admins sont prévenus pour réagir (ce n'est pas un rejet).
+JEMLI_CANCEL_CODES = {'cancelled', 'customer_cancelled', 'vendor_cancelled'}
+CALLBACK_STATUSES = set(JEMLI_STATUS_MAP) | {'cancelled', 'vendor_cancelled'}
+
+# Libellés JEMLI (fr, ar) envoyés au client à chaque nouveau statut partenaire.
+JEMLI_STATUS_LABELS = {
+    'driver_assigned': ('Livreur assigné', 'تم تعيين موصّل'),
+    'driver_arrived_to_pickup_point': ('Livreur arrivé au point de départ', 'وصل السائق إلى نقطة الاستلام'),
+    'driver_arrived_to_drop_point': ('Livreur arrivé', 'وصل السائق'),
+    'vendor_confirmed': ('Vendeur confirmé', 'تم تأكيد البائع'),
+    'vendor_preparing': ('Préparation de la commande', 'جاري تجهيز الطلب'),
+    'ready_for_pickup': ('Prêt pour récupérer', 'جاهز للاستلام'),
+    'driver_collected': ('Commande récupérée', 'تم استلام الطلب'),
+    'driver_on_way': ('En cours de livraison', 'في الطريق للتسليم'),
+    'driver_arrived': ('Livreur arrivé', 'وصل السائق'),
+    'delivered': ('Livrée', 'تم التوصيل'),
+}
+
+# Ordre de progression : un callback en retard ne fait jamais reculer la commande.
+_STATUS_RANK = {
+    'waiting': 0, 'paid': 1, 'looking_for_driver': 2, 'driver_assigned': 3, 'loading': 4, 'delivered': 5,
+}
 
 # Libellés notifiés au client, par langue.
 _STATUS_LABELS = {
@@ -184,16 +212,19 @@ def send_to_partner(commande):
     return True
 
 
-def notify_client_status(commande, new_status):
+def notify_client_status(commande, new_status, partner_code=None):
     lang = getattr(commande.user, 'default_lang', 'fr') or 'fr'
     labels = _STATUS_LABELS.get(lang, _STATUS_LABELS['fr'])
     label = labels.get(new_status, new_status)
+    if partner_code in JEMLI_STATUS_LABELS:
+        label = JEMLI_STATUS_LABELS[partner_code][1 if lang == 'ar' else 0]
     if lang == 'ar':
         body = f'تم تحديث حالة طلبك {commande.code}: {label}'
     else:
         body = f'Votre commande {commande.code} : {label}'
     send_notification(label, body, commande.user.fcm_token, data={
         'type': 'commande_status', 'commande': commande.code, 'status': new_status,
+        'partner_status': partner_code or '',
     })
 
 
@@ -212,24 +243,37 @@ def apply_partner_status(commande, external_status, driver_phone=None):
         fields.append('driver_phone')
 
     changed = None
+    known = code in JEMLI_STATUS_MAP or code in JEMLI_CANCEL_CODES
+    new_partner_status = known and code != commande.partner_status and commande.status != 'delivered'
+    if new_partner_status:
+        commande.partner_status = code
+        fields.append('partner_status')
+
     if code in JEMLI_CANCEL_CODES:
         if commande.dispatch_status != 'cancelled':
             commande.dispatch_status = 'cancelled'
             fields.append('dispatch_status')
-            send_notifications_to_admins(
-                'Livraison annulée',
-                f'{commande.delivery_provider} a annulé la livraison de la commande {commande.code}.',
-            )
-    else:
-        mapped = JEMLI_STATUS_MAP.get(code)
-        # Une commande livrée ne revient pas en arrière (callbacks en retard).
-        if mapped and mapped != commande.status and commande.status != 'delivered':
-            commande.status = mapped
-            fields.append('status')
-            changed = mapped
+            if code == 'vendor_cancelled':
+                body = f'Le restaurant a annulé la commande {commande.code} ({commande.delivery_provider}).'
+            else:
+                body = f'{commande.delivery_provider} a annulé la livraison de la commande {commande.code}.'
+            send_notifications_to_admins('Livraison annulée', body)
+        if fields:
+            commande.save(update_fields=fields)
+        return None
+
+    mapped = JEMLI_STATUS_MAP.get(code)
+    current_rank = _STATUS_RANK.get(commande.status)
+    # Pas de retour en arrière (callbacks en retard), ni de sortie de `rejected`.
+    if mapped and current_rank is not None and _STATUS_RANK[mapped] > current_rank:
+        commande.status = mapped
+        fields.append('status')
+        changed = mapped
 
     if fields:
         commande.save(update_fields=fields)
-    if changed:
-        notify_client_status(commande, changed)
+    # Le client est prévenu à chaque nouvelle étape JEMLI, même quand
+    # Commande.status ne bouge pas (ex. préparation -> récupérée : « en cours »).
+    if mapped and (changed or new_partner_status):
+        notify_client_status(commande, commande.status, code)
     return changed

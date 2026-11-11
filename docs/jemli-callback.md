@@ -23,13 +23,32 @@ X-Api-Key: <DeliveryProvider "jemli".webhook_secret de l'environnement>
 
 ## Statuts
 
-| `status` | Effet chez Chwily |
+`Commande.status` reste dans la liste connue de l'app ; le code JEMLI reçu est gardé dans
+`Commande.partner_status`, et le client reçoit une notification avec le libellé JEMLI (fr/ar)
+à chaque nouvelle étape. Un statut ne fait jamais reculer la commande.
+
+Commande restaurant (`orders/`, liste JEMLI du 2026-11-11) :
+
+| `status` | Libellé client | `Commande.status` |
+| --- | --- | --- |
+| `vendor_confirmed` | Vendeur confirmé | `loading` |
+| `vendor_preparing` | Préparation de la commande | `loading` |
+| `ready_for_pickup` | Prêt pour récupérer | `loading` |
+| `driver_collected` | Commande récupérée | `loading` |
+| `driver_on_way` | En cours de livraison | `loading` |
+| `driver_arrived` | Livreur arrivé | `loading` |
+| `delivered` | Livrée | `delivered` (final) |
+| `vendor_cancelled` | — (admins notifiés) | inchangé, `dispatch_status = cancelled` |
+
+Course (`deliveries/`) :
+
+| `status` | `Commande.status` |
 | --- | --- |
-| `driver_assigned` | `Commande.status = driver_assigned`, client notifié |
-| `driver_arrived_to_pickup_point` | `loading` (en cours), client notifié |
-| `driver_arrived_to_drop_point` | `loading` (inchangé si déjà en cours) |
-| `delivered` | `delivered`, final : les statuts suivants sont ignorés |
-| `cancelled` | statut de commande inchangé, `dispatch_status = cancelled`, admins notifiés |
+| `driver_assigned` | `driver_assigned` |
+| `driver_arrived_to_pickup_point` | `loading` |
+| `driver_arrived_to_drop_point` | `loading` |
+| `delivered` | `delivered` (final) |
+| `cancelled` | inchangé, `dispatch_status = cancelled`, admins notifiés |
 
 `customer_cancelled` (code JEMLI observé) est traité comme `cancelled`.
 

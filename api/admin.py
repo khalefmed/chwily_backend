@@ -34,7 +34,7 @@ class DeliveryTypeAdmin(admin.ModelAdmin):
 
 @admin.register(Commande)
 class CommandeAdmin(admin.ModelAdmin):
-    list_display = ('id', 'code', 'title', 'status', 'dispatch_status', 'delivery_provider', 'delivery_datetime', 'date')
+    list_display = ('id', 'code', 'title', 'status', 'partner_status', 'dispatch_status', 'delivery_provider', 'delivery_datetime', 'date')
     list_filter = ('status', 'dispatch_status', 'delivery_provider', 'delivery_type')
     search_fields = ('code', 'phone', 'payment_phone', 'title')
     readonly_fields = ('code', 'date')

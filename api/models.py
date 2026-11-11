@@ -229,6 +229,9 @@ class Commande(models.Model):
         max_length=20, choices=DISPATCH_STATUS_CHOICES, default='pending',
     )
     dispatched_at = models.DateTimeField(null=True, blank=True)
+    # Dernier statut détaillé reçu du partenaire (ex. vendor_preparing) : plus
+    # fin que `status`, qui reste dans la liste connue de l'app.
+    partner_status = models.CharField(max_length=50, blank=True, default='')
 
     # Numéro du wallet avec lequel le client paie (peut différer de `phone`),
     # normalisé sur 8 chiffres : sert au rapprochement automatique TwizePay.

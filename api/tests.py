@@ -336,3 +336,56 @@ class TwizePayWebhookTests(TestCase):
         self.assertEqual(self._post(self._tx(), timestamp=int(time.time()) - 600).status_code, 401)
         self.commande.refresh_from_db()
         self.assertEqual(self.commande.status, 'waiting')
+
+
+@mock.patch('api.services.delivery.send_notifications_to_admins')
+@mock.patch('api.services.delivery.send_notification')
+class JemliOrderStatusTests(TestCase):
+    URL = '/api/delivery/webhook/jemli/'
+
+    def setUp(self):
+        from api.models import Commande, User
+        self.provider = DeliveryProvider.objects.get(code='jemli')
+        user = User.objects.create_user(phone=55555555, password='x', default_lang='fr')
+        user.fcm_token = 'token'
+        user.save()
+        self.commande = Commande.objects.create(
+            prix=1000, location='x', phone='20004200', user=user, status='looking_for_driver',
+            delivery_provider=self.provider, partner_delivery_ref='9001', dispatch_status='sent')
+        self.client = APIClient()
+
+    def _post(self, code):
+        return self.client.post(self.URL, {'id': 9001, 'status': code}, format='json',
+                                HTTP_X_API_KEY=self.provider.webhook_secret)
+
+    def test_order_lifecycle_notifies_each_step(self, send, notify_admins):
+        steps = ['vendor_confirmed', 'vendor_preparing', 'ready_for_pickup', 'driver_collected',
+                 'driver_on_way', 'driver_arrived', 'delivered']
+        for code in steps:
+            self.assertEqual(self._post(code).status_code, 200)
+            self.commande.refresh_from_db()
+            self.assertEqual(self.commande.partner_status, code)
+        self.assertEqual(self.commande.status, 'delivered')
+        titles = [c.args[0] for c in send.call_args_list]
+        self.assertEqual(titles, ['Vendeur confirmé', 'Préparation de la commande', 'Prêt pour récupérer',
+                                  'Commande récupérée', 'En cours de livraison', 'Livreur arrivé', 'Livrée'])
+
+    def test_repeat_and_late_callbacks(self, send, notify_admins):
+        self._post('vendor_preparing')
+        self._post('vendor_preparing')
+        self.assertEqual(send.call_count, 1)
+        self._post('driver_assigned')  # arrive en retard : ne fait pas reculer « en cours »
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.status, 'loading')
+        self._post('delivered')
+        self._post('driver_on_way')
+        self.commande.refresh_from_db()
+        self.assertEqual((self.commande.status, self.commande.partner_status), ('delivered', 'delivered'))
+
+    def test_vendor_cancelled(self, send, notify_admins):
+        self.assertEqual(self._post('vendor_cancelled').status_code, 200)
+        self.commande.refresh_from_db()
+        self.assertEqual((self.commande.status, self.commande.dispatch_status, self.commande.partner_status),
+                         ('looking_for_driver', 'cancelled', 'vendor_cancelled'))
+        notify_admins.assert_called_once()
+        send.assert_not_called()

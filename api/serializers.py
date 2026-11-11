@@ -85,11 +85,11 @@ class CommandeSerializer(serializers.ModelSerializer):
             'delivery_type', 'delivery_provider', 'location_point', 'delivery_lat', 'delivery_lng',
             'driver_phone',
             'partner_delivery_ref', 'partner_delivery_fee', 'delivery_final_price',
-            'delivery_datetime', 'dispatch_status', 'dispatched_at', 'payment_phone',
+            'delivery_datetime', 'dispatch_status', 'dispatched_at', 'payment_phone', 'partner_status',
         ]
         read_only_fields = [
             'delivery_type', 'delivery_provider', 'driver_phone', 'partner_delivery_ref',
-            'partner_delivery_fee', 'delivery_final_price', 'dispatch_status', 'dispatched_at',
+            'partner_delivery_fee', 'delivery_final_price', 'dispatch_status', 'dispatched_at', 'partner_status',
         ]
 
     def create(self, validated_data):

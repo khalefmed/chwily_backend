@@ -118,8 +118,10 @@ Le tarif est **`delivery_fee`** (pas `price`). Chez nous :
   | `delivered` | `delivered` |
   | `customer_cancelled` (observé) | `rejected` |
 
-  Inconnus : le statut initial (avant affectation d'un livreur), les autres annulations
-  et le passage « commande récupérée ».
+  Commandes restaurant (`orders/`), liste transmise par JEMLI le 2026-11-11 :
+  `vendor_confirmed`, `vendor_cancelled`, `vendor_preparing`, `ready_for_pickup`,
+  `driver_collected`, `driver_on_way`, `driver_arrived`, `delivered` — correspondance dans
+  `jemli-callback.md`. Inconnu : le statut initial d'une course avant affectation.
 - Format de `driver` quand il est renseigné : inconnu (probablement nom et téléphone).
 
 ### `POST orders/?category=restaurant` — commande restaurant (plats + livraison) 📄 ⚠️
@@ -171,7 +173,7 @@ de leur côté. La vue accepte de façon défensive `delivery_id` | `id` | `refe
 
 ## Questions ouvertes pour JEMLI
 
-1. Liste complète des `status.code` : statut initial, annulations (restaurant, livreur), commande récupérée.
+1. ~~Liste des statuts~~ reçue le 2026-11-11 pour `orders/` ; reste le statut initial d'une course.
 2. Format du webhook, et comment l'enregistrer chez eux (URL + secret).
 3. Réponse de `POST orders/` : identifiant, et comment suivre une commande ensuite.
 4. `customer_description` ou `custom_description` pour `orders/` ?
