@@ -4,6 +4,10 @@ Le planificateur envoie à JEMLI les commandes `mes_plats` à l'heure de livrais
 choisie par le client. Il s'appuie sur `manage.py dispatch_scheduled_orders`,
 déclenché chaque minute par un **timer systemd**.
 
+Le même service lance aussi `manage.py send_scheduled_notifications` (notifications
+programmées depuis l'app admin : Gestion → Notifications programmées). Une installation
+existante doit recopier `chwily-dispatch.service` puis `systemctl daemon-reload`.
+
 Les chemins ci-dessous supposent :
 
 | élément            | chemin                        |

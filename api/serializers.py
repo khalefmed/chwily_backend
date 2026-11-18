@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import (
     Poster, User, Category, Commande, ItemCommande,
     LocationPoint, DeliveryType, DeliveryProvider,
+    AppConfiguration, Promotion, ScheduledNotification,
 )
 
 class LoginSerializer(serializers.Serializer):
@@ -108,3 +109,63 @@ class PosterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Poster
         fields = '__all__'
+
+# --- Écrans « Gestion » de l'app admin ---
+
+class PromotionSerializer(serializers.ModelSerializer):
+    uses = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Promotion
+        fields = [
+            'id', 'name', 'code', 'discount_type', 'value', 'max_discount', 'min_order_amount',
+            'starts_at', 'ends_at', 'max_uses', 'max_uses_per_user', 'is_active', 'uses', 'created_at',
+        ]
+        read_only_fields = ['created_at']
+
+    def get_uses(self, obj):
+        from .services.pricing import engaged_commandes
+        return engaged_commandes().filter(promotion=obj).count()
+
+    def validate(self, attrs):
+        # Mêmes règles que l'admin Django (Promotion.clean).
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        data = {f: getattr(self.instance, f) for f in self.Meta.fields
+                if self.instance is not None and f not in ('uses', 'created_at')}
+        data.update(attrs)
+        data.pop('id', None)
+        candidate = Promotion(pk=getattr(self.instance, 'pk', None), **data)
+        try:
+            candidate.clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict)
+        return attrs
+
+
+class ScheduledNotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScheduledNotification
+        fields = ['id', 'title', 'body', 'send_at', 'status', 'sent_at', 'error', 'created_at']
+        read_only_fields = ['status', 'sent_at', 'error', 'created_at']
+
+    def validate_send_at(self, value):
+        from django.utils import timezone
+        if value <= timezone.now():
+            raise serializers.ValidationError("La date d'envoi doit être dans le futur.")
+        return value
+
+
+class LoyaltyConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AppConfiguration
+        fields = ['loyalty_enabled', 'loyalty_orders_count', 'loyalty_reward_amount']
+
+    def validate_loyalty_orders_count(self, value):
+        if value < 1:
+            raise serializers.ValidationError('Au moins 1 commande.')
+        return value
+
+    def validate_loyalty_reward_amount(self, value):
+        if value < 0:
+            raise serializers.ValidationError('Montant positif attendu.')
+        return value

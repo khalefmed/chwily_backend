@@ -456,3 +456,29 @@ class CreditTransaction(models.Model):
 
     def __str__(self):
         return f'{self.user} {self.amount:+} ({self.kind})'
+
+
+class ScheduledNotification(models.Model):
+    """Notification push à tous les clients (topic `all-users`), envoyée à
+    `send_at` par `manage.py send_scheduled_notifications` (timer systemd)."""
+    STATUSES = [
+        ('pending', 'En attente'),
+        ('sent', 'Envoyée'),
+        ('failed', 'Échec'),
+        ('cancelled', 'Annulée'),
+    ]
+
+    title = models.CharField(max_length=150)
+    body = models.TextField()
+    send_at = models.DateTimeField(db_index=True)
+    status = models.CharField(max_length=20, choices=STATUSES, default='pending', db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    error = models.CharField(max_length=300, blank=True, default='')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-send_at']
+
+    def __str__(self):
+        return f'{self.title} ({self.send_at:%Y-%m-%d %H:%M}, {self.status})'

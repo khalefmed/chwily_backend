@@ -31,3 +31,17 @@ def send_notification(title, body, token, data=None):
 def send_notifications_to_admins(title, body):
     for admin in User.objects.filter(type__in=['admin', 'super_admin']):
         send_notification(title, body, admin.fcm_token)
+
+
+BROADCAST_TOPIC = 'all-users'
+
+
+def send_broadcast(title, body):
+    """Push à tous les clients (abonnés au topic côté app). Lève l'exception
+    FCM en cas d'échec ; renvoie l'id du message."""
+    message = messaging.Message(
+        notification=messaging.Notification(title=title, body=body),
+        data={'click_action': 'FLUTTER_NOTIFICATION_CLICK', 'type': 'broadcast'},
+        topic=BROADCAST_TOPIC,
+    )
+    return messaging.send(message)

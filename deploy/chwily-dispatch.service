@@ -1,5 +1,5 @@
 [Unit]
-Description=Chwily - envoi des commandes de livraison planifiées (mes_plats)
+Description=Chwily - envoi des commandes planifiées (mes_plats) et des notifications programmées
 After=network-online.target
 Wants=network-online.target
 
@@ -10,6 +10,7 @@ Group=www-data
 WorkingDirectory=/opt/chwily/backend
 EnvironmentFile=/opt/chwily/backend/.env
 ExecStart=/opt/chwily/venv/bin/python manage.py dispatch_scheduled_orders
+ExecStart=/opt/chwily/venv/bin/python manage.py send_scheduled_notifications
 # Évite les exécutions qui se chevauchent si une passe traîne
 TimeoutStartSec=120
 

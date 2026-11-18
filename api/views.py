@@ -14,6 +14,7 @@ from django.contrib.auth import authenticate
 from .models import (
     AppConfiguration, User, Category, Commande, ItemCommande,
     DeliveryProvider, DeliveryType, LocationPoint,
+    Promotion, ScheduledNotification,
 )
 from .serializers import *
 from django.shortcuts import get_object_or_404
@@ -31,6 +32,7 @@ from firebase_admin._messaging_utils import UnregisteredError
 import logging.config
 
 from .services.notifications import send_notification, send_notifications_to_admins
+from .permissions import IsAppAdmin
 from .services.availability import unavailable_categories
 from .services.pricing import apply_pricing, compute_pricing
 from .services.catalog import ensure_catalog_fresh
@@ -893,3 +895,57 @@ def update_default_lang(request):
         "default_lang": user.default_lang
     }, status=status.HTTP_200_OK)
 
+
+
+
+# --- Écrans « Gestion » de l'app admin (réservés à User.type admin/super_admin) ---
+
+class PromotionAdminViewSet(viewsets.ModelViewSet):
+    """Codes promo (`?kind=code`) et réductions programmées (`?kind=auto`, sans code)."""
+    serializer_class = PromotionSerializer
+    permission_classes = [IsAppAdmin]
+
+    def get_queryset(self):
+        queryset = Promotion.objects.all()
+        kind = self.request.query_params.get('kind')
+        if kind == 'code':
+            queryset = queryset.exclude(code='')
+        elif kind == 'auto':
+            queryset = queryset.filter(code='')
+        return queryset
+
+
+class ScheduledNotificationViewSet(viewsets.ModelViewSet):
+    """Notifications programmées. DELETE sur une notification en attente =
+    annulation (l'historique des envois est conservé)."""
+    serializer_class = ScheduledNotificationSerializer
+    permission_classes = [IsAppAdmin]
+    http_method_names = ['get', 'post', 'delete']
+    queryset = ScheduledNotification.objects.all()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        notif = self.get_object()
+        if notif.status != 'pending':
+            return Response({'detail': 'Seule une notification en attente peut être annulée.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        notif.status = 'cancelled'
+        notif.save(update_fields=['status'])
+        return Response(self.get_serializer(notif).data)
+
+
+class LoyaltyConfigView(APIView):
+    """Configuration fidélité : toutes les X commandes livrées, Y MRU de crédit."""
+    permission_classes = [IsAppAdmin]
+
+    def get(self, request):
+        return Response(LoyaltyConfigSerializer(AppConfiguration.current()).data)
+
+    def patch(self, request):
+        config = AppConfiguration.objects.first() or AppConfiguration()
+        serializer = LoyaltyConfigSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

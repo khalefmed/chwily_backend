@@ -577,3 +577,85 @@ class PricingTests(TestCase):
         commande = Commande.objects.get(pk=self._order().json()['id'])
         self.assertTrue(_amount_matches(commande, Decimal('1120')))
         self.assertFalse(_amount_matches(commande, Decimal('1220')))
+
+
+class AdminManagementApiTests(TestCase):
+    """Écrans « Gestion » : promotions, notifications programmées, fidélité."""
+
+    def setUp(self):
+        from api.models import User
+        self.admin = User.objects.create_user(phone=88888888, password='x', type='admin')
+        self.simple = User.objects.create_user(phone=99999999, password='x')
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def _promo_body(self, **kwargs):
+        from datetime import timedelta
+        from django.utils import timezone
+        now = timezone.now()
+        body = {'name': 'Test', 'code': 'abc', 'discount_type': 'percent', 'value': 15,
+                'starts_at': now.isoformat(), 'ends_at': (now + timedelta(days=2)).isoformat()}
+        body.update(kwargs)
+        return body
+
+    def test_simple_user_is_forbidden(self):
+        self.client.force_authenticate(self.simple)
+        self.assertEqual(self.client.get('/api/admin/promotions/').status_code, 403)
+        self.assertEqual(self.client.get('/api/admin/loyalty-config/').status_code, 403)
+
+    def test_promotion_crud_and_validation(self):
+        created = self.client.post('/api/admin/promotions/', self._promo_body(), format='json')
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()['code'], 'ABC')
+
+        duplicate = self.client.post('/api/admin/promotions/', self._promo_body(), format='json')
+        self.assertIn('code', duplicate.json())
+        bad = self.client.post('/api/admin/promotions/', self._promo_body(code='', value=150), format='json')
+        self.assertIn('value', bad.json())
+
+        self.client.post('/api/admin/promotions/', self._promo_body(code='', name='Auto'), format='json')
+        self.assertEqual([p['name'] for p in self.client.get('/api/admin/promotions/?kind=auto').json()], ['Auto'])
+
+        pk = created.json()['id']
+        patched = self.client.patch(f'/api/admin/promotions/{pk}/', {'is_active': False}, format='json')
+        self.assertFalse(patched.json()['is_active'])
+
+    def test_loyalty_config(self):
+        response = self.client.patch('/api/admin/loyalty-config/',
+                                     {'loyalty_enabled': True, 'loyalty_orders_count': 5,
+                                      'loyalty_reward_amount': 300}, format='json')
+        self.assertEqual(response.status_code, 200)
+        from api.models import AppConfiguration
+        self.assertEqual(AppConfiguration.current().loyalty_orders_count, 5)
+        self.assertEqual(self.client.patch('/api/admin/loyalty-config/', {'loyalty_orders_count': 0},
+                                           format='json').status_code, 400)
+
+    @mock.patch('api.management.commands.send_scheduled_notifications.send_broadcast', return_value='id')
+    def test_scheduled_notification_lifecycle(self, broadcast):
+        from datetime import timedelta
+        from django.core.management import call_command
+        from django.utils import timezone
+        from api.models import ScheduledNotification
+
+        past = self.client.post('/api/admin/scheduled-notifications/',
+                                {'title': 't', 'body': 'b', 'send_at': timezone.now().isoformat()}, format='json')
+        self.assertEqual(past.status_code, 400)
+        created = self.client.post('/api/admin/scheduled-notifications/',
+                                   {'title': 'Promo', 'body': 'Ce soir',
+                                    'send_at': (timezone.now() + timedelta(hours=1)).isoformat()}, format='json')
+        self.assertEqual(created.status_code, 201)
+
+        notif = ScheduledNotification.objects.get(pk=created.json()['id'])
+        stale = ScheduledNotification.objects.create(title='Vieux', body='x', send_at=timezone.now() - timedelta(hours=3))
+        ScheduledNotification.objects.filter(pk=notif.pk).update(send_at=timezone.now() - timedelta(minutes=1))
+        call_command('send_scheduled_notifications', stdout=mock.MagicMock())
+
+        broadcast.assert_called_once_with('Promo', 'Ce soir')
+        notif.refresh_from_db()
+        stale.refresh_from_db()
+        self.assertEqual((notif.status, stale.status), ('sent', 'failed'))
+        self.assertEqual(self.client.delete(f'/api/admin/scheduled-notifications/{notif.pk}/').status_code, 400)
+
+        later = ScheduledNotification.objects.create(title='Plus tard', body='x', send_at=timezone.now() + timedelta(days=1))
+        cancelled = self.client.delete(f'/api/admin/scheduled-notifications/{later.pk}/')
+        self.assertEqual(cancelled.json()['status'], 'cancelled')

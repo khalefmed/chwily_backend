@@ -105,3 +105,10 @@ class CreditTransactionAdmin(admin.ModelAdmin):
     list_filter = ('kind',)
     search_fields = ('user__phone', 'user__first_name', 'user__last_name', 'note')
     raw_id_fields = ('user', 'commande')
+
+
+@admin.register(ScheduledNotification)
+class ScheduledNotificationAdmin(admin.ModelAdmin):
+    list_display = ('title', 'send_at', 'status', 'sent_at', 'created_by')
+    list_filter = ('status',)
+    search_fields = ('title', 'body')

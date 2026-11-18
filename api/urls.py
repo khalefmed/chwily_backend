@@ -8,6 +8,8 @@ router.register('categories', CategoryViewSet)
 router.register('commandes', CommandeViewSet)
 router.register('items', ItemCommandeViewSet)
 router.register('posters', PosterViewSet)
+router.register('admin/promotions', PromotionAdminViewSet, basename='admin-promotions')
+router.register('admin/scheduled-notifications', ScheduledNotificationViewSet, basename='admin-scheduled-notifications')
 
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
@@ -43,6 +45,7 @@ urlpatterns = [
     path('users/<int:pk>/toggle_type/', ToggleUserTypeView.as_view(), name='toggle-user-type'),
 
     path('stats/', StatisticsView.as_view(), name='stats'),
+    path('admin/loyalty-config/', LoyaltyConfigView.as_view(), name='admin-loyalty-config'),
 
     path('', include(router.urls)),
 ]
