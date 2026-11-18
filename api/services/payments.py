@@ -3,7 +3,8 @@ enregistrement des transactions et rapprochement avec les commandes.
 
 Règle de rapprochement : une transaction entrante (CR) paie la plus ancienne
 commande `waiting` dont `payment_phone` est le numéro payeur et dont le
-montant total (prix + livraison) est égal au montant reçu. Le rapprochement
+montant total (`Commande.total_amount` : prix + livraison + frais de service
+- remises - crédit, voir pricing.py) est égal au montant reçu. Le rapprochement
 se fait dans les deux sens : à la réception du paiement, et à la création de
 la commande (le client peut payer avant de valider sa commande).
 """

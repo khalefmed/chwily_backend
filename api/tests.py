@@ -452,3 +452,128 @@ class ItemAvailabilityTests(TestCase):
 
     def test_empty_hours_means_always_available(self, notify):
         self.assertEqual(self._order(self.always).status_code, 201)
+
+
+@mock.patch('api.signals.send_notification')
+@mock.patch('api.views.send_notifications_to_admins')
+class PricingTests(TestCase):
+    """Frais de service, promotions (auto / code), crédit fidélité."""
+
+    def setUp(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from api.models import AppConfiguration, User
+        self.now = timezone.now()
+        self.day = timedelta(days=1)
+        self.config = AppConfiguration.objects.create(service_fee=20)
+        image = CloudinaryResource('x', format='jpg', version=1, type='upload', resource_type='image')
+        self.item = Category.objects.create(
+            name_fr='Plat', name_ar='x', price1=1000, price2=1000, price3=1000, livraison=0,
+            type='guewda', type_class='guewda', image=image,
+        )
+        self.user = User.objects.create_user(phone=77777777, password='x')
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def _promo(self, **kwargs):
+        from api.models import Promotion
+        data = dict(name='Promo', discount_type='amount', value=100,
+                    starts_at=self.now - self.day, ends_at=self.now + self.day)
+        data.update(kwargs)
+        return Promotion.objects.create(**data)
+
+    def _pricing(self, prix=1000, livraison=200, code=''):
+        return self.client.post('/api/commandes/pricing/',
+                                {'prix': prix, 'livraison': livraison, 'promo_code': code}, format='json').json()
+
+    def _order(self, prix=1000, livraison=200, code='', expected_total=None):
+        import json
+        data = {'title': 't', 'phone': '22222222', 'prix': str(prix), 'livraison': str(livraison),
+                'location': 'carte', 'promo_code': code,
+                'items': json.dumps([{'category_id': self.item.id, 'number': 1, 'selected_price': prix}])}
+        if expected_total is not None:
+            data['expected_total'] = str(expected_total)
+        return self.client.post('/api/commandes/add/', data, format='multipart')
+
+    def test_service_fee_without_promotion(self, admins, notify):
+        data = self._pricing()
+        self.assertEqual((data['service_fee'], data['total'], data['promotion']), (20, 1220, None))
+
+    def test_best_automatic_promotion_applies(self, admins, notify):
+        self._promo(name='Fixe', value=100)
+        self._promo(name='Pourcent', discount_type='percent', value=50, max_discount=150)
+        self._promo(name='Passée', value=900, starts_at=self.now - 3 * self.day, ends_at=self.now - 2 * self.day)
+
+        data = self._pricing()
+
+        self.assertEqual(data['promotion']['name'], 'Pourcent')
+        self.assertEqual((data['discount_amount'], data['total']), (150, 1070))
+
+    def test_free_delivery(self, admins, notify):
+        self._promo(discount_type='free_delivery', value=0)
+        data = self._pricing()
+        self.assertEqual((data['delivery_discount'], data['discount_amount'], data['total']), (200, 0, 1020))
+
+    def test_promo_code_errors(self, admins, notify):
+        self._promo(code='OLD', ends_at=self.now - self.day / 2, starts_at=self.now - self.day)
+        self._promo(code='MIN', min_order_amount=5000)
+        self.assertEqual(self._pricing(code='nope')['promo_error'], 'invalid')
+        self.assertEqual(self._pricing(code='old')['promo_error'], 'expired')
+        self.assertEqual(self._pricing(code='MIN')['promo_error'], 'min_order')
+
+    def test_code_loses_to_better_automatic_promotion(self, admins, notify):
+        self._promo(name='Auto', value=300)
+        self._promo(name='Code', code='SMALL', value=50)
+        data = self._pricing(code='small')
+        self.assertEqual((data['promotion']['name'], data['promo_error']), ('Auto', 'better_promotion_applied'))
+
+    def test_code_usage_limit_per_user_and_release_on_reject(self, admins, notify):
+        self._promo(code='ONCE', value=100, max_uses_per_user=1)
+
+        first = self._order(code='once')
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual((first.json()['promo_code'], first.json()['total_amount']), ('ONCE', 1120))
+        self.assertEqual(self._pricing(code='ONCE')['promo_error'], 'already_used')
+
+        from api.models import Commande
+        Commande.objects.filter(pk=first.json()['id']).update(status='rejected')
+        self.assertEqual(self._pricing(code='ONCE')['promo_error'], '')
+
+    def test_loyalty_reward_and_credit_use(self, admins, notify):
+        from api.models import Commande, CreditTransaction
+        self.config.loyalty_enabled = True
+        self.config.loyalty_orders_count = 2
+        self.config.loyalty_reward_amount = 1500
+        self.config.save()
+
+        for _ in range(2):
+            commande = Commande.objects.get(pk=self._order().json()['id'])
+            commande.status = 'delivered'
+            with self.captureOnCommitCallbacks(execute=True):
+                commande.save()
+                commande.save()  # rejouer le statut ne crédite pas deux fois
+
+        self.assertEqual(CreditTransaction.objects.filter(user=self.user).count(), 1)
+        notify.assert_called_once()
+        data = self._pricing()
+        self.assertEqual((data['credit_balance'], data['credit_used'], data['total']), (1500, 1220, 0))
+        self.assertEqual(data['loyalty']['orders_remaining'], 2)
+
+        # Commande entièrement couverte : payée d'office.
+        covered = self._order(expected_total=0).json()
+        self.assertEqual((covered['status'], covered['credit_used']), ('paid', 1220))
+        self.assertEqual(self._pricing()['credit_balance'], 280)
+
+    def test_price_changed_is_reported(self, admins, notify):
+        response = self._order(expected_total=1200)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['pricing']['total'], 1220)
+
+    def test_twizepay_matches_discounted_total(self, admins, notify):
+        from decimal import Decimal
+        from api.models import Commande
+        from api.services.payments import _amount_matches
+        self._promo(value=100)
+        commande = Commande.objects.get(pk=self._order().json()['id'])
+        self.assertTrue(_amount_matches(commande, Decimal('1120')))
+        self.assertFalse(_amount_matches(commande, Decimal('1220')))

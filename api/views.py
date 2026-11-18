@@ -32,6 +32,7 @@ import logging.config
 
 from .services.notifications import send_notification, send_notifications_to_admins
 from .services.availability import unavailable_categories
+from .services.pricing import apply_pricing, compute_pricing
 from .services.catalog import ensure_catalog_fresh
 from .services.delivery import (
     dispatch_commande, resolve_delivery_type, quote_delivery, apply_partner_status,
@@ -201,7 +202,29 @@ class AddCommandeView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
 
-        print(request.data.get('livraison'))
+        # Montant calculé côté serveur (frais de service, promotion, crédit
+        # fidélité) avant la création : `expected_total` est le total affiché
+        # au client ; s'il a changé entre-temps, on renvoie le nouveau calcul.
+        try:
+            pricing = compute_pricing(
+                request.user, request.data.get('prix'), request.data.get('livraison'),
+                request.data.get('promo_code', ''),
+            )
+        except (TypeError, ValueError):
+            return Response({'detail': 'Invalid prix/livraison.'}, status=status.HTTP_400_BAD_REQUEST)
+        expected_total = request.data.get('expected_total')
+        if expected_total not in (None, ''):
+            try:
+                changed = abs(float(expected_total) - pricing.total) > 0.01
+            except (TypeError, ValueError):
+                changed = True
+            if changed:
+                return Response({
+                    'detail': 'The order amount has changed.',
+                    'code': 'price_changed',
+                    'pricing': pricing.as_dict(),
+                }, status=status.HTTP_409_CONFLICT)
+
         commande_data = {
             'prix': request.data.get('prix'),
             'location': request.data.get('location'),
@@ -247,6 +270,11 @@ class AddCommandeView(APIView):
 
             item_serializer.save()
 
+        apply_pricing(commande, pricing)
+        commande.save(update_fields=[
+            'service_fee', 'promotion', 'promo_code', 'discount_amount', 'delivery_discount', 'credit_used',
+        ])
+
         # Résolution du type de livraison partenaire + prix (best-effort,
         # non bloquant). Le prix vient du devis fait par l'app au checkout.
         try:
@@ -267,12 +295,21 @@ class AddCommandeView(APIView):
         except Exception:
             logger.exception('Résolution livraison partenaire échouée pour %s', commande.code)
 
-        # Le client a pu payer avant de valider : paiement TwizePay déjà reçu ?
-        try:
-            if match_commande(commande):
-                commande.refresh_from_db()
-        except Exception:
-            logger.exception('Rapprochement TwizePay échoué pour %s', commande.code)
+        if commande.total_amount <= 0:
+            # Entièrement couverte (crédit / promotion) : rien à payer.
+            commande.status = 'paid'
+            commande.save(update_fields=['status'])
+            try:
+                dispatch_commande(commande)
+            except Exception:
+                logger.exception('dispatch_commande a échoué pour %s', commande.code)
+        else:
+            # Le client a pu payer avant de valider : paiement TwizePay déjà reçu ?
+            try:
+                if match_commande(commande):
+                    commande.refresh_from_db()
+            except Exception:
+                logger.exception('Rapprochement TwizePay échoué pour %s', commande.code)
 
         user = request.user
 
@@ -455,6 +492,26 @@ class LocationPointListView(generics.ListAPIView):
 
     def get_queryset(self):
         return LocationPoint.objects.filter(is_active=True).order_by('name')
+
+
+class CommandePricingView(APIView):
+    """Aperçu du montant au checkout (page de paiement).
+
+    Body : { "prix": <articles>, "livraison": <livraison>, "promo_code": "<optionnel>" }
+    Réponse : détail (service_fee, discount_amount, delivery_discount,
+    credit_used, credit_balance, promotion, promo_error, loyalty) + `total`.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            pricing = compute_pricing(
+                request.user, request.data.get('prix'), request.data.get('livraison'),
+                request.data.get('promo_code', ''),
+            )
+        except (TypeError, ValueError):
+            return Response({'detail': 'Invalid prix/livraison.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(pricing.as_dict())
 
 
 class DeliveryQuoteView(APIView):

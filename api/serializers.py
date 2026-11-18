@@ -76,6 +76,8 @@ class ItemCommandeSerializer(serializers.ModelSerializer):
 class CommandeSerializer(serializers.ModelSerializer):
     user = UserDetailSerializer(read_only=True)
     items = ItemCommandeSerializer(many=True, read_only=True)
+    total_amount = serializers.FloatField(read_only=True)
+    promotion_name = serializers.CharField(source='promotion.name', read_only=True, default=None)
 
     class Meta:
         model = Commande
@@ -86,10 +88,14 @@ class CommandeSerializer(serializers.ModelSerializer):
             'driver_phone',
             'partner_delivery_ref', 'partner_delivery_fee', 'delivery_final_price',
             'delivery_datetime', 'dispatch_status', 'dispatched_at', 'payment_phone', 'partner_status',
+            'service_fee', 'promotion', 'promotion_name', 'promo_code', 'discount_amount', 'delivery_discount',
+            'credit_used', 'total_amount',
         ]
         read_only_fields = [
             'delivery_type', 'delivery_provider', 'driver_phone', 'partner_delivery_ref',
             'partner_delivery_fee', 'delivery_final_price', 'dispatch_status', 'dispatched_at', 'partner_status',
+            # Montant : calculé par api/services/pricing.py, jamais fourni par l'app.
+            'service_fee', 'promotion', 'promo_code', 'discount_amount', 'delivery_discount', 'credit_used',
         ]
 
     def create(self, validated_data):

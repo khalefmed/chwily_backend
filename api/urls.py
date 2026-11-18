@@ -23,6 +23,7 @@ urlpatterns = [
     path('mes_commandes/', MesCommandesView.as_view(), name='mes-commandes'),
     path('commandes/add/', AddCommandeView.as_view(), name='add-commande'),
     path('commandes/delivery-quote/', DeliveryQuoteView.as_view(), name='delivery-quote'),
+    path('commandes/pricing/', CommandePricingView.as_view(), name='commande-pricing'),
     path('commandes/status/<str:status_value>/', CommandesByStatusView.as_view(), name='commandes-by-status'),
     path('commandes/<int:pk>/change_status/', ChangeCommandeStatusView.as_view(), name='change-commande-status'),
 

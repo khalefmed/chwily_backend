@@ -248,10 +248,25 @@ class Commande(models.Model):
     # normalisé sur 8 chiffres : sert au rapprochement automatique TwizePay.
     payment_phone = models.CharField(max_length=20, blank=True, default='', db_index=True)
 
+    # --- Montant (calculé par api/services/pricing.py à la création) ---
+    service_fee = models.FloatField(default=0)
+    promotion = models.ForeignKey(
+        'Promotion', on_delete=models.SET_NULL, null=True, blank=True, related_name='commandes',
+    )
+    promo_code = models.CharField(max_length=30, blank=True, default='')
+    discount_amount = models.FloatField(default=0, help_text="Remise sur le prix des articles.")
+    delivery_discount = models.FloatField(default=0, help_text="Remise sur la livraison.")
+    credit_used = models.FloatField(default=0, help_text="Crédit fidélité du client déduit.")
+
     @property
     def total_amount(self):
-        """Montant que le client doit payer : articles + livraison."""
-        return (self.prix or 0) + (self.livraison or 0)
+        """Montant que le client doit payer (rapproché des paiements TwizePay) :
+        articles + livraison + frais de service - remises - crédit utilisé."""
+        total = (
+            (self.prix or 0) + (self.livraison or 0) + (self.service_fee or 0)
+            - (self.discount_amount or 0) - (self.delivery_discount or 0) - (self.credit_used or 0)
+        )
+        return round(max(total, 0), 2)
 
     @property
     def destination(self):
@@ -337,9 +352,107 @@ class AppConfiguration(models.Model):
     store_url = models.URLField(default="https://play.google.com/store/apps/details?id=com.chwily.app")
     appstore_url = models.URLField(default="https://apps.apple.com/mr/app/chwily/id6747934029")
 
+    # Frais de service ajoutés à chaque commande (0 = gratuit).
+    service_fee = models.FloatField(default=0, help_text="Frais de service par commande, en MRU (0 = gratuit).")
+    # Fidélité : toutes les `loyalty_orders_count` commandes livrées, le client
+    # reçoit `loyalty_reward_amount` MRU de crédit, déduit de ses commandes suivantes.
+    loyalty_enabled = models.BooleanField(default=False, verbose_name="Fidélité activée")
+    loyalty_orders_count = models.PositiveIntegerField(
+        default=10, help_text="Nombre de commandes livrées (X) pour gagner la récompense.",
+    )
+    loyalty_reward_amount = models.FloatField(
+        default=0, help_text="Crédit (Y, en MRU) offert après X commandes livrées.",
+    )
+
+    @classmethod
+    def current(cls):
+        """La configuration (singleton), ou les valeurs par défaut si absente."""
+        return cls.objects.first() or cls()
+
     class Meta:
         verbose_name = "Configuration de l'Application"
 
     def __str__(self):
         return "Configuration Globale"
 
+
+
+class Promotion(models.Model):
+    """Promotion sur une période : automatique pour tous les clients si `code`
+    est vide, sinon appliquée quand le client saisit le code. Une seule
+    promotion par commande (la plus avantageuse) — voir api/services/pricing.py."""
+    DISCOUNT_TYPES = [
+        ('amount', 'Montant fixe sur la commande'),
+        ('percent', 'Pourcentage sur la commande'),
+        ('free_delivery', 'Livraison gratuite'),
+    ]
+
+    name = models.CharField(max_length=100, verbose_name="Nom")
+    code = models.CharField(
+        max_length=30, blank=True, default='', db_index=True,
+        help_text="Code promo à saisir par le client. Vide = promotion automatique pour tous.",
+    )
+    discount_type = models.CharField(max_length=20, choices=DISCOUNT_TYPES, default='amount')
+    value = models.FloatField(
+        default=0, help_text="Montant en MRU (montant fixe) ou pourcentage (ex : 10). Ignoré pour la livraison gratuite.",
+    )
+    max_discount = models.FloatField(
+        null=True, blank=True, help_text="Plafond de la remise en MRU (pourcentage uniquement). Vide = sans plafond.",
+    )
+    min_order_amount = models.FloatField(default=0, help_text="Prix minimum des articles pour en profiter.")
+    starts_at = models.DateTimeField(verbose_name="Début")
+    ends_at = models.DateTimeField(verbose_name="Fin")
+    max_uses = models.PositiveIntegerField(null=True, blank=True, help_text="Utilisations au total. Vide = illimité.")
+    max_uses_per_user = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Utilisations par client. Vide = illimité.",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-starts_at']
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValidationError({'ends_at': "La fin doit être après le début."})
+        if self.discount_type == 'percent' and not 0 < (self.value or 0) <= 100:
+            raise ValidationError({'value': "Un pourcentage doit être entre 0 et 100."})
+        if self.discount_type == 'amount' and (self.value or 0) <= 0:
+            raise ValidationError({'value': "Le montant doit être positif."})
+        code = (self.code or '').strip().upper()
+        if code and Promotion.objects.filter(code=code).exclude(pk=self.pk).exists():
+            raise ValidationError({'code': "Ce code existe déjà."})
+
+    def save(self, *args, **kwargs):
+        self.code = (self.code or '').strip().upper()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.name} ({self.code})' if self.code else self.name
+
+
+class CreditTransaction(models.Model):
+    """Mouvement du crédit d'un client (récompense fidélité, geste manuel).
+    Le solde = somme des mouvements - crédit engagé dans ses commandes
+    (Commande.credit_used) : voir api/services/pricing.py."""
+    KINDS = [
+        ('loyalty_reward', 'Récompense fidélité'),
+        ('manual', 'Ajustement manuel'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='credit_transactions')
+    amount = models.FloatField(help_text="Positif = crédit offert, négatif = retrait.")
+    kind = models.CharField(max_length=20, choices=KINDS, default='manual')
+    commande = models.ForeignKey(
+        Commande, on_delete=models.SET_NULL, null=True, blank=True, related_name='credit_rewards',
+        help_text="Commande qui a déclenché la récompense.",
+    )
+    note = models.CharField(max_length=200, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user} {self.amount:+} ({self.kind})'
