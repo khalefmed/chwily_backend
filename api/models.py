@@ -88,6 +88,10 @@ class Category(models.Model):
     external_image_url = models.URLField(max_length=500, blank=True, default='')
     # Désactivé plutôt que supprimé : ItemCommande.category est en CASCADE.
     is_active = models.BooleanField(default=True)
+    # Heures (0-23, heure de Nouakchott) où l'article peut être commandé,
+    # fournies par le catalogue partenaire (`hours`). Vide = toujours disponible.
+    # Voir api/services/availability.py.
+    available_hours = models.JSONField(default=list, blank=True)
 
 
     def __str__(self):

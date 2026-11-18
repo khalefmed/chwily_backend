@@ -59,7 +59,7 @@ Le tarif est **`delivery_fee`** (pas `price`). Chez nous :
 {"category": "restaurant", "vendor_id": 472, "products": [
   {"id": 7513, "name": "أظهر", "description": "", "price": 1000.0,
    "discount_price": null, "image": "https://api-jemli.oneposts.io/media/...",
-   "menus": [{"id": 1560, "name": "المشويات"}]}
+   "menus": [{"id": 1560, "name": "المشويات"}], "hours": [12, 13, 14]}
 ]}
 ```
 
@@ -68,6 +68,12 @@ Le tarif est **`delivery_fee`** (pas `price`). Chez nous :
 - Seule `category=restaurant` est acceptée (sinon 400). `vendor_id` et `page` sont ignorés,
   il n'y a pas de pagination. Les noms sont en arabe uniquement.
 - Utilisé par `catalog.py` pour alimenter `mes_plats` (`Category.external_id` = `id`).
+- `hours` (ajouté par JEMLI, 2026-11, annoncé, pas encore observé en réel) : heures 0-23
+  où le produit peut être commandé ; `[]` = toujours disponible. Recopié dans
+  `Category.available_hours`. Lu en heure de Nouakchott, l'heure `h` couvre `h:00`–`h:59`.
+  `AddCommandeView` refuse (400 `items_unavailable`) une commande dont un article n'est pas
+  disponible à `delivery_datetime` (ou maintenant si non programmée) ; voir
+  `api/services/availability.py`.
 
 ### `POST deliveries/` — créer une course 📄
 

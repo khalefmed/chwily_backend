@@ -8,6 +8,7 @@ pour que panier, `ItemCommande` et commande restent inchangés côté app et API
 - Clé de rapprochement : `Category.external_id` = id produit partenaire.
 - Images : le compte Cloudinary refuse le type "fetch", l'image partenaire est
   donc téléversée (public_id `jemli/products/<id>`), uniquement si elle change.
+- `hours` du produit -> `available_hours` (voir availability.py).
 - Produit absent du catalogue -> `is_active=False` (jamais supprimé :
   ItemCommande.category est en CASCADE). Les articles saisis à la main pour ce
   type sont donc masqués eux aussi.
@@ -19,6 +20,7 @@ from cloudinary import CloudinaryResource
 from django.core.cache import cache
 
 from ..models import Category, DeliveryType
+from .availability import parse_hours
 from .delivery import client_for
 from .jemli import DeliveryPartnerError
 
@@ -94,6 +96,7 @@ def sync_partner_catalog(delivery_type):
         category.livraison = 0
         category.is_big_steak = False
         category.order = position
+        category.available_hours = parse_hours(product.get('hours'))
         category.is_active = True
         category.save()
         active_ids.append(category.pk)

@@ -21,6 +21,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 import json
+from datetime import timezone as dt_timezone
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from firebase_admin import messaging
 from .firebase_init import *
@@ -28,6 +31,7 @@ from firebase_admin._messaging_utils import UnregisteredError
 import logging.config
 
 from .services.notifications import send_notification, send_notifications_to_admins
+from .services.availability import unavailable_categories
 from .services.catalog import ensure_catalog_fresh
 from .services.delivery import (
     dispatch_commande, resolve_delivery_type, quote_delivery, apply_partner_status,
@@ -158,6 +162,17 @@ class AddCommandeView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
+    @staticmethod
+    def _unavailable_items(items_data, raw_datetime):
+        ids = {item.get('category_id') for item in items_data if isinstance(item, dict)}
+        categories = Category.objects.filter(pk__in=[i for i in ids if i is not None])
+        moment = parse_datetime(raw_datetime) if raw_datetime else None
+        if moment is not None and timezone.is_naive(moment):
+            moment = timezone.make_aware(moment, dt_timezone.utc)
+        if moment is None or moment < timezone.now():
+            moment = timezone.now()
+        return unavailable_categories(categories, moment)
+
     def post(self, request):
         items_data = request.data.get('items')
         if not items_data:
@@ -170,6 +185,20 @@ class AddCommandeView(APIView):
 
         if not isinstance(items_data, list):
             return Response({'detail': 'A list of items is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Articles du catalogue partenaire disponibles seulement à certaines
+        # heures : contrôlés au moment d'envoi (créneau programmé, sinon maintenant).
+        unavailable = self._unavailable_items(items_data, request.data.get('delivery_datetime'))
+        if unavailable:
+            return Response({
+                'detail': 'Some items are not available at the requested time.',
+                'code': 'items_unavailable',
+                'items': [
+                    {'id': c.id, 'name_fr': c.name_fr, 'name_ar': c.name_ar,
+                     'available_hours': c.available_hours}
+                    for c in unavailable
+                ],
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
         print(request.data.get('livraison'))

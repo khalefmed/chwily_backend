@@ -78,6 +78,17 @@ class PartnerCatalogTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([d['external_id'] for d in response.json()], ['1'])
 
+    def test_hours_are_imported(self, list_products, upload):
+        list_products.return_value = {'products': [
+            dict(_product(1, 'a', 100.0, 'https://x/1.jpg'), hours=[14, '12', 13, 99, 'x']),
+            dict(_product(2, 'b', 100.0, 'https://x/2.jpg'), hours=[]),
+            _product(3, 'c', 100.0, 'https://x/3.jpg'),
+        ]}
+
+        data = self.client.get('/api/category/mes_plats/').json()
+
+        self.assertEqual([d['available_hours'] for d in data], [[12, 13, 14], [], []])
+
     def test_other_types_do_not_call_partner(self, list_products, upload):
         self.client.get('/api/category/guewda/')
         list_products.assert_not_called()
@@ -393,3 +404,51 @@ class JemliOrderStatusTests(TestCase):
                          ('looking_for_driver', 'cancelled', 'vendor_cancelled'))
         notify_admins.assert_called_once()
         send.assert_not_called()
+
+
+@mock.patch('api.views.send_notifications_to_admins')
+class ItemAvailabilityTests(TestCase):
+    """Commande refusée si un article du catalogue n'est pas disponible au
+    moment d'envoi (créneau programmé, sinon maintenant)."""
+
+    def setUp(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from api.models import User
+        from api.services.availability import NOUAKCHOTT
+        self.now = timezone.now().astimezone(NOUAKCHOTT)
+        self.later = (self.now + timedelta(hours=3)).replace(minute=0, second=0, microsecond=0)
+        image = CloudinaryResource('x', format='jpg', version=1, type='upload', resource_type='image')
+        common = dict(name_ar='x', price1=100, price2=100, price3=100, livraison=0,
+                      type='mes_plats', type_class='mes_plats', image=image)
+        self.lunch = Category.objects.create(name_fr='Midi', available_hours=[self.later.hour], **common)
+        self.always = Category.objects.create(name_fr='Toujours', available_hours=[], **common)
+        self.client = APIClient()
+        self.client.force_authenticate(User.objects.create_user(phone=66666666, password='x'))
+
+    def _order(self, category, delivery_datetime=None):
+        import json
+        data = {'title': 't', 'phone': '22222222', 'prix': '100', 'livraison': '0', 'location': 'carte',
+                'items': json.dumps([{'category_id': category.id, 'number': 1, 'selected_price': 100}])}
+        if delivery_datetime:
+            data['delivery_datetime'] = delivery_datetime.isoformat()
+        return self.client.post('/api/commandes/add/', data, format='multipart')
+
+    def test_unavailable_now_is_rejected(self, notify):
+        response = self._order(self.lunch)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['code'], 'items_unavailable')
+        self.assertEqual(response.json()['items'][0]['id'], self.lunch.id)
+
+    def test_scheduled_in_available_hour_is_accepted(self, notify):
+        response = self._order(self.lunch, self.later.replace(minute=30))
+        self.assertEqual(response.status_code, 201)
+
+    def test_scheduled_outside_hours_is_rejected(self, notify):
+        from datetime import timedelta
+        response = self._order(self.lunch, self.later + timedelta(hours=1))
+        self.assertEqual(response.status_code, 400)
+
+    def test_empty_hours_means_always_available(self, notify):
+        self.assertEqual(self._order(self.always).status_code, 201)
