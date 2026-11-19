@@ -46,6 +46,10 @@ urlpatterns = [
 
     path('stats/', StatisticsView.as_view(), name='stats'),
     path('admin/loyalty-config/', LoyaltyConfigView.as_view(), name='admin-loyalty-config'),
+    path('admin/commandes/', AdminCommandesView.as_view(), name='admin-commandes'),
+    path('admin/commandes/summary/', AdminCommandesSummaryView.as_view(), name='admin-commandes-summary'),
+    path('admin/commandes/<int:pk>/', AdminCommandeDetailView.as_view(), name='admin-commande-detail'),
+    path('admin/commandes/<int:pk>/items/', AdminCommandeItemsView.as_view(), name='admin-commande-items'),
 
     path('', include(router.urls)),
 ]

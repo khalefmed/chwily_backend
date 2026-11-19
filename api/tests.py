@@ -659,3 +659,90 @@ class AdminManagementApiTests(TestCase):
         later = ScheduledNotification.objects.create(title='Plus tard', body='x', send_at=timezone.now() + timedelta(days=1))
         cancelled = self.client.delete(f'/api/admin/scheduled-notifications/{later.pk}/')
         self.assertEqual(cancelled.json()['status'], 'cancelled')
+
+
+@mock.patch('api.views.send_notification')
+@mock.patch('api.views.send_notifications_to_admins')
+class AdminOrderEditTests(TestCase):
+    """Modification des plats par un admin, reste à payer, complément TwizePay."""
+
+    def setUp(self):
+        from api.models import Commande, ItemCommande, User
+        image = CloudinaryResource('x', format='jpg', version=1, type='upload', resource_type='image')
+        common = dict(name_ar='x', price2=0, price3=0, livraison=0, type='guewda', type_class='guewda', image=image)
+        self.plat = Category.objects.create(name_fr='Plat', price1=1000, **common)
+        self.extra = Category.objects.create(name_fr='Extra', price1=500, **common)
+        self.other = Category.objects.create(name_fr='Poisson', price1=300, **{**common, 'type': 'poisson'})
+        self.client_user = User.objects.create_user(phone=31313131, password='x')
+        self.commande = Commande.objects.create(
+            user=self.client_user, prix=1000, livraison=200, location='x', title='t', payment_phone='31313131',
+        )
+        self.item = ItemCommande.objects.create(commande=self.commande, category=self.plat, number=1, selected_price=1000)
+        self.client = APIClient()
+        self.client.force_authenticate(User.objects.create_user(phone=41414141, password='x', type='admin'))
+
+    def _items(self, *lines, method='put'):
+        url = f'/api/admin/commandes/{self.commande.pk}/items/'
+        call = self.client.put if method == 'put' else self.client.post
+        return call(url, {'items': list(lines)}, format='json')
+
+    def _pay(self):
+        self.commande.status = 'paid'
+        self.commande.save(update_fields=['status'])
+        self.commande.refresh_from_db()
+
+    def test_paid_amount_recorded_when_paid(self, admins, notify):
+        self._pay()
+        self.assertEqual((self.commande.paid_amount, self.commande.amount_due), (1200, 0))
+
+    def test_preview_does_not_save(self, admins, notify):
+        self._pay()
+        data = self._items({'id': self.item.id, 'number': 2}, {'category_id': self.extra.id, 'number': 1},
+                           method='post').json()
+        self.assertEqual((data['prix'], data['total_amount'], data['amount_due']), (2500, 2700, 1500))
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.prix, 1000)
+
+    def test_edit_paid_order_creates_balance_and_notifies(self, admins, notify):
+        self._pay()
+        response = self._items({'id': self.item.id, 'number': 1}, {'category_id': self.extra.id, 'number': 2})
+        self.assertEqual(response.status_code, 200)
+        commande = response.json()['commande']
+        self.assertEqual((commande['prix'], commande['amount_due'], len(commande['items'])), (2000, 1000, 2))
+        self.assertIn('1000', notify.call_args.args[1])
+
+    def test_reduction_gives_negative_due_and_removed_lines(self, admins, notify):
+        self._pay()
+        extra = self._items({'id': self.item.id, 'number': 1}, {'category_id': self.extra.id, 'number': 1}).json()
+        extra_id = next(i['id'] for i in extra['commande']['items'] if i['category']['id'] == self.extra.id)
+        data = self._items({'id': extra_id, 'number': 1}).json()['commande']
+        self.assertEqual((data['prix'], data['amount_due']), (500, -500))
+
+    def test_rules(self, admins, notify):
+        self.assertEqual(self._items({'category_id': self.other.id, 'number': 1}).json()['code'], 'wrong_type')
+        self.assertEqual(self._items({'id': self.item.id, 'number': 0}).json()['code'], 'empty')
+        self.commande.status = 'vendor_preparing'
+        self.commande.save()
+        self.assertEqual(self._items({'id': self.item.id, 'number': 2}).json()['code'], 'not_editable')
+
+    def test_supplement_matched_by_twizepay(self, admins, notify):
+        from decimal import Decimal
+        from api.models import WalletTransaction
+        from api.services.payments import match_transaction
+        self._pay()
+        self._items({'id': self.item.id, 'number': 2})
+        tx = WalletTransaction.objects.create(
+            external_id='tx-supp', direction='CR', amount=Decimal('1000'), payer_phone='31313131',
+            counterparty_number='31313131',
+        )
+        with mock.patch('api.services.payments._in_background'):
+            self.assertEqual(match_transaction(tx).pk, self.commande.pk)
+        self.commande.refresh_from_db()
+        self.assertEqual((self.commande.paid_amount, self.commande.amount_due), (2200, 0))
+
+    def test_list_and_summary(self, admins, notify):
+        self._pay()
+        data = self.client.get('/api/admin/commandes/?status=waiting,paid').json()
+        self.assertEqual([c['code'] for c in data['results']], [self.commande.code])
+        self.assertEqual(data['results'][0]['order_type'], 'guewda')
+        self.assertEqual(self.client.get('/api/admin/commandes/summary/').json()['paid'], 1)

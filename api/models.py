@@ -257,6 +257,11 @@ class Commande(models.Model):
     discount_amount = models.FloatField(default=0, help_text="Remise sur le prix des articles.")
     delivery_discount = models.FloatField(default=0, help_text="Remise sur la livraison.")
     credit_used = models.FloatField(default=0, help_text="Crédit fidélité du client déduit.")
+    # Montant effectivement encaissé (renseigné au passage à `paid`, augmenté
+    # par les compléments TwizePay). Sert au « reste à payer » quand l'admin
+    # modifie les plats d'une commande déjà payée (api/services/order_edit.py).
+    paid_amount = models.FloatField(default=0)
+    items_edited_at = models.DateTimeField(null=True, blank=True)
 
     @property
     def total_amount(self):
@@ -267,6 +272,27 @@ class Commande(models.Model):
             - (self.discount_amount or 0) - (self.delivery_discount or 0) - (self.credit_used or 0)
         )
         return round(max(total, 0), 2)
+
+    @property
+    def amount_due(self):
+        """Reste à payer : le total tant que rien n'est payé, puis la différence
+        avec l'encaissé (négatif = trop-perçu à rembourser)."""
+        if self.status == 'rejected':
+            return 0
+        if self.status == 'waiting':
+            return self.total_amount
+        return round(self.total_amount - (self.paid_amount or 0), 2)
+
+    @property
+    def order_type(self):
+        """Type de catégorie des plats (un seul par commande, cf. panier)."""
+        item = self.items.select_related('category').first()
+        return item.category.type if item and item.category_id else ''
+
+    @property
+    def is_editable(self):
+        from .services.order_edit import is_editable
+        return is_editable(self)
 
     @property
     def destination(self):

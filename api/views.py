@@ -34,6 +34,7 @@ import logging.config
 from .services.notifications import send_notification, send_notifications_to_admins
 from .permissions import IsAppAdmin
 from .services.availability import unavailable_categories
+from .services.order_edit import OrderEditError, apply_items_edit, preview_items_edit
 from .services.pricing import apply_pricing, compute_pricing
 from .services.catalog import ensure_catalog_fresh
 from .services.delivery import (
@@ -949,3 +950,111 @@ class LoyaltyConfigView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+
+class AdminCommandesView(APIView):
+    """Liste des commandes pour l'app admin : `?status=waiting,paid` (plusieurs
+    statuts), `?search=` (code / téléphones), `?due=1` (reste à payer > 0)."""
+    permission_classes = [IsAppAdmin]
+
+    def get(self, request):
+        commandes = (Commande.objects.select_related('user', 'delivery_type', 'promotion')
+                     .prefetch_related('items__category').order_by('-date'))
+        statuses = [s for s in request.query_params.get('status', '').split(',') if s]
+        if statuses:
+            commandes = commandes.filter(status__in=statuses)
+        search = request.query_params.get('search', '').strip()
+        if search:
+            commandes = commandes.filter(
+                Q(phone__icontains=search) | Q(user__phone__icontains=search)
+                | Q(code__icontains=search) | Q(payment_phone__icontains=search)
+            )
+        paginator = CommandesByStatusPagination()
+        page = paginator.paginate_queryset(commandes, request)
+        return paginator.get_paginated_response(CommandeSerializer(page, many=True).data)
+
+
+class AdminCommandeDetailView(APIView):
+    permission_classes = [IsAppAdmin]
+
+    def get(self, request, pk):
+        commande = get_object_or_404(
+            Commande.objects.select_related('user', 'delivery_type', 'promotion').prefetch_related('items__category'),
+            pk=pk,
+        )
+        return Response(CommandeSerializer(commande).data)
+
+
+class AdminCommandesSummaryView(APIView):
+    """Nombre de commandes par statut (badges de l'écran commandes admin)."""
+    permission_classes = [IsAppAdmin]
+
+    def get(self, request):
+        from django.db.models import Count
+        counts = dict(Commande.objects.values_list('status').annotate(n=Count('id')))
+        return Response({code: counts.get(code, 0) for code, _ in Commande.STATUS_CHOICES})
+
+
+class AdminCommandeItemsView(APIView):
+    """Modification des plats d'une commande (voir services/order_edit.py).
+
+    POST : aperçu des montants, sans rien enregistrer ; PUT : enregistre et
+    prévient le client. Body : {"items": [{"id"?, "category_id", "number", ...}]}
+    """
+    permission_classes = [IsAppAdmin]
+
+    def _lines(self, request):
+        lines = request.data.get('items')
+        if isinstance(lines, str):
+            try:
+                lines = json.loads(lines)
+            except ValueError:
+                lines = None
+        return lines
+
+    def post(self, request, pk):
+        commande = get_object_or_404(Commande, pk=pk)
+        try:
+            return Response(preview_items_edit(commande, self._lines(request)))
+        except OrderEditError as exc:
+            return Response({'detail': exc.detail, 'code': exc.code}, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request, pk):
+        commande = get_object_or_404(Commande, pk=pk)
+        try:
+            commande, result = apply_items_edit(commande, self._lines(request))
+        except OrderEditError as exc:
+            return Response({'detail': exc.detail, 'code': exc.code}, status=status.HTTP_400_BAD_REQUEST)
+        _notify_items_edited(commande, result)
+        commande = Commande.objects.prefetch_related('items__category').get(pk=commande.pk)
+        return Response({'result': result, 'commande': CommandeSerializer(commande).data})
+
+
+def _notify_items_edited(commande, result):
+    """Prévient le client, dans sa langue, que ses plats ont changé et ce qu'il
+    lui reste à payer (ou qu'un trop-perçu lui sera rendu)."""
+    due = result['amount_due'] if commande.status != 'waiting' else 0
+    user = commande.user
+    if user.default_lang == 'ar':
+        title = 'تم تعديل طلبك'
+        body = f'تم تعديل أطباق طلبك {commande.code}.'
+        if due > 0:
+            body += f' المبلغ المتبقي للدفع: {int(due)} أوقية.'
+        elif due < 0:
+            body += f' سيتم إرجاع {int(-due)} أوقية لك.'
+        else:
+            body += f' المجموع الجديد: {int(result["total_amount"])} أوقية.'
+    else:
+        title = 'Commande modifiée'
+        body = f'Les plats de votre commande {commande.code} ont été modifiés.'
+        if due > 0:
+            body += f' Reste à payer : {int(due)} MRU.'
+        elif due < 0:
+            body += f' {int(-due)} MRU vous seront remboursés.'
+        else:
+            body += f' Nouveau total : {int(result["total_amount"])} MRU.'
+    try:
+        send_notification(title, body, user.fcm_token, data={'type': 'order_edited', 'commande': commande.id})
+    except Exception:
+        logger.exception('Notification de modification non envoyée pour %s', commande.code)

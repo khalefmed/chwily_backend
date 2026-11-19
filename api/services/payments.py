@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 SIGNATURE_TOLERANCE_SECONDS = 300
 # Une commande et un paiement plus anciens que ça ne sont plus rapprochés.
 MATCH_WINDOW = timedelta(hours=24)
+# Complément après modification des plats par un admin (order_edit.py).
+SUPPLEMENT_WINDOW = timedelta(days=7)
 AMOUNT_TOLERANCE = Decimal('0.01')
 
 
@@ -124,6 +126,10 @@ def match_transaction(tx):
         )
         commande = next((c for c in candidates if _amount_matches(c, tx.amount)), None)
         if commande is None:
+            supplement = _supplement_candidate(tx)
+            if supplement is not None:
+                _link_supplement(tx, supplement)
+                return supplement
             if candidates:
                 waiting_pk = candidates[0].pk
                 transaction.on_commit(lambda: _in_background(_alert_amount_mismatch, tx.pk, waiting_pk))
@@ -165,6 +171,37 @@ def _link(tx, commande):
     commande.save(update_fields=['status'])
     logger.info('Commande %s payée automatiquement par la transaction TwizePay %s', commande.code, tx.external_id)
     transaction.on_commit(lambda: _in_background(_after_paid, commande.pk, tx.pk))
+
+
+def _supplement_candidate(tx):
+    """Commande déjà payée dont le reste à payer (plats modifiés) est égal au
+    montant reçu, pour le même numéro payeur."""
+    candidates = (
+        Commande.objects.select_for_update()
+        .filter(payment_phone=tx.payer_phone, paid_amount__gt=0,
+                items_edited_at__gte=timezone.now() - SUPPLEMENT_WINDOW)
+        .exclude(status__in=['waiting', 'rejected'])
+        .order_by('items_edited_at')
+    )
+    return next(
+        (c for c in candidates if c.amount_due > 0
+         and abs(Decimal(str(c.amount_due)) - tx.amount) <= AMOUNT_TOLERANCE),
+        None,
+    )
+
+
+def _link_supplement(tx, commande):
+    tx.commande = commande
+    tx.match_status = 'matched'
+    tx.matched_at = timezone.now()
+    tx.save(update_fields=['commande', 'match_status', 'matched_at'])
+    commande.paid_amount = round((commande.paid_amount or 0) + float(tx.amount), 2)
+    commande.save(update_fields=['paid_amount'])
+    logger.info('Complément de %s MRU reçu pour la commande %s', tx.amount, commande.code)
+    transaction.on_commit(lambda: _in_background(
+        send_notifications_to_admins, 'Complément reçu',
+        f'Commande {commande.code} : complément de {tx.amount} MRU reçu depuis le {tx.counterparty_number}.',
+    ))
 
 
 def _in_background(func, *args):

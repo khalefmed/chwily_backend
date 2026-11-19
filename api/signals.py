@@ -1,4 +1,6 @@
-"""Récompense fidélité au passage d'une commande à `delivered`, quel que soit
+"""Effets de bord des changements de Commande.
+
+Récompense fidélité au passage d'une commande à `delivered`, quel que soit
 le chemin (app admin, callback JEMLI, admin Django) — voir services/pricing.py."""
 import logging
 
@@ -11,6 +13,18 @@ from .services.notifications import send_notification
 from .services.pricing import grant_loyalty_rewards
 
 logger = logging.getLogger(__name__)
+
+
+@receiver(post_save, sender=Commande)
+def record_paid_amount(sender, instance, **kwargs):
+    """Au premier passage au-delà de `waiting` (paiement TwizePay, statut
+    changé par un admin, commande couverte...), on considère le total encaissé."""
+    if instance.status in ('waiting', 'rejected') or instance.paid_amount:
+        return
+    total = instance.total_amount
+    if total > 0:
+        Commande.objects.filter(pk=instance.pk, paid_amount=0).update(paid_amount=total)
+        instance.paid_amount = total
 
 
 @receiver(post_save, sender=Commande)
